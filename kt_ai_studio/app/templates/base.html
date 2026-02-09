@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <!-- Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', path='/main.css') }}">
+</head>
+<body class="d-flex flex-column min-vh-100">
+    <!-- Navigation (App Header Style) -->
+    <nav class="navbar navbar-expand-lg navbar-app fixed-top">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="/">
+                <div class="rounded-3 bg-primary text-white d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px;">
+                    <i class="bi bi-robot fs-6"></i>
+                </div>
+                <span>KT AI Studio</span>
+            </a>
+            <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto gap-2">
+                    <li class="nav-item">
+                        <a class="nav-link rounded-2 px-3 {% if request.url.path == '/' %}active bg-light{% endif %}" href="/">
+                            <i class="bi bi-house-door me-1"></i>首页
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link rounded-2 px-3 {% if 'projects' in request.url.path %}active bg-light{% endif %}" href="/projects">
+                            <i class="bi bi-collection me-1"></i>项目列表
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link rounded-2 px-3 {% if 'styles' in request.url.path %}active bg-light{% endif %}" href="/styles">
+                            <i class="bi bi-palette me-1"></i>画风管理
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link rounded-2 px-3 {% if 'settings/llm' in request.url.path %}active bg-light{% endif %}" href="/settings/llm">
+                            <i class="bi bi-cpu me-1"></i>LLM 引擎
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content (Added padding-top for fixed navbar) -->
+    <main class="flex-grow-1" style="padding-top: 80px; padding-bottom: 40px;">
+        {% block content %}
+        <div class="container text-center py-5 mt-5">
+            <div class="row justify-content-center">
+                <div class="col-md-8 col-lg-6">
+                    <div class="card border-0 shadow-lg" style="background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); color: white;">
+                        <div class="card-body p-5">
+                            <i class="bi bi-stars display-1 mb-4" style="opacity: 0.8;"></i>
+                            <h1 class="display-5 fw-bold mb-3">KT AI Studio</h1>
+                            <p class="lead mb-4" style="opacity: 0.9;">现代化的 AI 角色管理与图像生成工作台</p>
+                            <a href="/projects" class="btn btn-light btn-lg px-5 rounded-pill shadow-sm fw-bold text-primary">
+                                <i class="bi bi-arrow-right-circle me-2"></i>开始创作
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white border-top py-4 mt-auto">
+        <div class="container text-center">
+            <p class="text-muted small mb-0">&copy; 2026 KT AI Studio. Designed for Creators.</p>
+        </div>
+    </footer>
+
+    <!-- Toast Container -->
+    <div class="toast-container position-fixed top-50 start-50 translate-middle p-3" id="toastContainer" style="z-index: 9999;"></div>
+
+    <!-- Bootstrap 5 JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', path='/main.js') }}"></script>
+    <script>
+        function showToast(message, type = 'info', duration = 3000) {
+            const container = document.getElementById('toastContainer');
+            
+            // Map types to Bootstrap colors
+            let bgClass = 'bg-primary';
+            let icon = 'bi-info-circle-fill';
+            
+            if (type === 'success') { bgClass = 'bg-success'; icon = 'bi-check-circle-fill'; }
+            if (type === 'error') { bgClass = 'bg-danger'; icon = 'bi-x-circle-fill'; }
+            if (type === 'warning') { bgClass = 'bg-warning text-dark'; icon = 'bi-exclamation-triangle-fill'; }
+            
+            const textColor = type === 'warning' ? 'text-dark' : 'text-white';
+            
+            const toastHtml = `
+                <div class="toast align-items-center ${bgClass} ${textColor} border-0 shadow-lg rounded-3 mb-2" role="alert" aria-live="assertive" aria-atomic="true">
+                    <div class="d-flex">
+                        <div class="toast-body d-flex align-items-center">
+                            <i class="bi ${icon} fs-5 me-2"></i>
+                            <span class="fw-medium">${message}</span>
+                        </div>
+                        <button type="button" class="btn-close ${type !== 'warning' ? 'btn-close-white' : ''} me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                    </div>
+                </div>
+            `;
+            
+            // Create element
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = toastHtml;
+            const toastEl = wrapper.firstElementChild;
+            
+            container.appendChild(toastEl);
+            
+            // Init Bootstrap Toast
+            const toast = new bootstrap.Toast(toastEl, { delay: duration });
+            toast.show();
+            
+            // Cleanup on hide
+            toastEl.addEventListener('hidden.bs.toast', () => {
+                toastEl.remove();
+            });
+        }
+    </script>
+</body>
+</html>

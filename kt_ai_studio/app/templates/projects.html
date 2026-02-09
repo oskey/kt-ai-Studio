@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <!-- Header Section -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-bold mb-1">项目列表</h4>
+            <p class="text-secondary small mb-0">管理您的所有创作项目</p>
+        </div>
+        <button type="button" class="btn btn-primary shadow-sm rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#createProjectModal">
+            <i class="bi bi-plus-lg me-1"></i>新建项目
+        </button>
+    </div>
+
+    <!-- Project List (App Style) -->
+    <div class="d-flex flex-column">
+        {% for project in projects %}
+        <div class="app-list-item">
+            <!-- Icon -->
+            <div class="app-avatar project me-3">
+                <i class="bi bi-folder-fill"></i>
+            </div>
+            
+            <!-- Content -->
+            <div class="flex-grow-1 min-width-0">
+                <div class="d-flex align-items-center mb-1">
+                    <h6 class="mb-0 fw-bold text-dark me-2 text-truncate">{{ project.name }}</h6>
+                    <span class="badge bg-light text-secondary border rounded-pill fw-normal">{{ project.project_code }}</span>
+                    {% if project.style %}
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill fw-normal ms-2 small">
+                        <i class="bi bi-palette-fill me-1"></i>{{ project.style.name }}
+                    </span>
+                    {% endif %}
+                </div>
+                <p class="text-secondary small mb-0 text-truncate" title="{{ project.mark or '' }}">
+                    {{ project.mark or '暂无备注' }}
+                </p>
+            </div>
+
+            <!-- Date (Desktop only) -->
+            <div class="text-end text-muted small me-4 d-none d-md-block" style="min-width: 100px;">
+                <i class="bi bi-clock me-1"></i>{{ project.created_at.strftime('%Y-%m-%d') }}
+            </div>
+
+            <!-- Actions -->
+            <div class="d-flex gap-2">
+                <a href="/projects/{{ project.id }}" class="btn btn-light btn-sm rounded-pill px-3 fw-medium text-primary bg-indigo-subtle">
+                    进入
+                </a>
+                <div class="dropdown">
+                    <button class="btn btn-icon" type="button" data-bs-toggle="dropdown">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-3">
+                        <li>
+                            <button class="dropdown-item py-2" 
+                                    data-id="{{ project.id }}"
+                                    data-name="{{ project.name }}"
+                                    data-mark="{{ project.mark or '' }}"
+                                    data-style-id="{{ project.style_id or '' }}"
+                                    onclick="editProject(this.getAttribute('data-id'), this.getAttribute('data-name'), this.getAttribute('data-mark'), this.getAttribute('data-style-id'))">
+                                <i class="bi bi-pencil me-2 text-secondary"></i>编辑信息
+                            </button>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <button class="dropdown-item py-2 text-danger" onclick="confirmDelete('{{ project.id }}', '{{ project.name }}')">
+                                <i class="bi bi-trash me-2"></i>删除项目
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <div class="bg-white rounded-circle d-inline-flex align-items-center justify-content-center shadow-sm mb-3" style="width: 80px; height: 80px;">
+                <i class="bi bi-inbox text-secondary fs-2"></i>
+            </div>
+            <h5 class="text-dark">暂无项目</h5>
+            <p class="text-secondary">点击右上角新建一个项目吧</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Create Project Modal -->
+<div class="modal fade" id="createProjectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">新建项目</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="/projects" method="post">
+                <div class="modal-body pt-4">
+                    <div class="mb-3">
+                        <label class="text-label mb-1">项目名称 <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control form-control-lg bg-light border-0" required placeholder="例如：赛博朋克短片">
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-label mb-1">项目代号 (ID) <span class="text-danger">*</span></label>
+                        <input type="text" name="project_code" class="form-control bg-light border-0" required placeholder="例如：cyber_2077">
+                        <div class="form-text small">用于生成文件路径，不支持中文。</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="text-label mb-1">画风锁定 (Style Preset) <span class="text-danger">*</span></label>
+                        <select name="style_id" class="form-select form-select-lg bg-light border-0" required>
+                            <option value="" disabled selected>请选择项目画风...</option>
+                            {% for style in styles %}
+                            <option value="{{ style.style_id }}">{{ style.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text small text-warning"><i class="bi bi-lock-fill me-1"></i>画风一旦选定，项目内所有生成将强制继承该风格，且不可修改。</div>
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="text-label mb-1">备注</label>
+                        <textarea name="mark" class="form-control bg-light border-0" rows="3" placeholder="项目简介..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0 pb-4">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">创建项目</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Project Modal -->
+<div class="modal fade" id="editProjectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">编辑项目</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editProjectForm" method="post">
+                <div class="modal-body pt-4">
+                    <div class="mb-3">
+                        <label class="text-label mb-1">项目名称 <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editProjectName" class="form-control form-control-lg bg-light border-0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-label mb-1">画风锁定 (Style Preset)</label>
+                        <select name="style_id" id="editProjectStyle" class="form-select form-select-lg bg-light border-0" required>
+                            <option value="" disabled>请选择项目画风...</option>
+                            {% for style in styles %}
+                            <option value="{{ style.style_id }}">{{ style.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text small text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>注意：更改画风将影响项目后续所有生成任务的一致性。</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-label mb-1">备注</label>
+                        <textarea name="mark" id="editProjectMark" class="form-control bg-light border-0" rows="3"></textarea>
+                    </div>
+                    <div class="p-3 rounded-3 bg-primary-subtle text-primary small">
+                        <i class="bi bi-info-circle-fill me-2"></i>项目代号不可修改以保证文件路径一致性。
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0 pb-4">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">保存修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteProjectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-body text-center p-4">
+                <div class="text-danger mb-3">
+                    <i class="bi bi-exclamation-circle-fill display-4"></i>
+                </div>
+                <h5 class="fw-bold mb-2">确认删除?</h5>
+                <p class="text-secondary small mb-4">
+                    您确定要删除项目 <strong id="deleteProjectName" class="text-dark"></strong> 吗？此操作不可恢复。
+                </p>
+                <form id="deleteProjectForm" method="post" class="d-grid gap-2">
+                    <button type="submit" class="btn btn-danger rounded-pill">确认删除</button>
+                    <button type="button" class="btn btn-light rounded-pill" data-bs-dismiss="modal">取消</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function editProject(id, name, mark, styleId) {
+    document.getElementById('editProjectName').value = name;
+    document.getElementById('editProjectMark').value = mark;
+    document.getElementById('editProjectStyle').value = styleId;
+    document.getElementById('editProjectForm').action = '/projects/' + id + '/edit';
+    var editModal = new bootstrap.Modal(document.getElementById('editProjectModal'));
+    editModal.show();
+}
+
+function confirmDelete(id, name) {
+    document.getElementById('deleteProjectName').textContent = name;
+    document.getElementById('deleteProjectForm').action = '/projects/' + id + '/delete';
+    var deleteModal = new bootstrap.Modal(document.getElementById('deleteProjectModal'));
+    deleteModal.show();
+}
+</script>
+{% endblock %}

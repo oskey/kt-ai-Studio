@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="fw-bold mb-1">LLM 引擎设置</h4>
+        <p class="text-secondary mb-0">管理提示词生成的 AI 模型配置 (DeepSeek / OpenAI)</p>
+    </div>
+    <button class="btn btn-primary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#createProfileModal">
+        <i class="bi bi-plus-lg me-2"></i>新增配置
+    </button>
+</div>
+
+<!-- Profiles List -->
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="bg-light">
+                <tr>
+                    <th class="ps-4 py-3 text-secondary small text-uppercase" style="width: 50px;">状态</th>
+                    <th class="py-3 text-secondary small text-uppercase">配置名称</th>
+                    <th class="py-3 text-secondary small text-uppercase">服务商 (Provider)</th>
+                    <th class="py-3 text-secondary small text-uppercase">模型 (Model)</th>
+                    <th class="py-3 text-secondary small text-uppercase">API 地址</th>
+                    <th class="text-end pe-4 py-3 text-secondary small text-uppercase">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for profile in profiles %}
+                <tr class="{% if profile.is_default %}bg-primary-subtle{% endif %}">
+                    <td class="ps-4">
+                        {% if profile.is_default %}
+                        <span class="badge bg-primary rounded-pill"><i class="bi bi-check-lg me-1"></i>默认</span>
+                        {% else %}
+                        <form action="/settings/llm/{{ profile.id }}/default" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary rounded-pill" title="设为默认">
+                                <i class="bi bi-circle"></i>
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
+                    <td><span class="fw-bold text-dark">{{ profile.name }}</span></td>
+                    <td>
+                        {% if profile.provider == 'deepseek' %}
+                        <span class="badge bg-info-subtle text-info border border-info-subtle">DeepSeek</span>
+                        {% else %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle">OpenAI</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="font-monospace small bg-light px-2 py-1 rounded">{{ profile.model or '默认' }}</span></td>
+                    <td><span class="text-secondary small text-truncate d-inline-block" style="max-width: 200px;">{{ profile.base_url }}</span></td>
+                    <td class="text-end pe-4">
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm btn-outline-secondary border-0" 
+                                    onclick="editProfile({{ profile.id }})" 
+                                    title="编辑">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            {% if not profile.is_default %}
+                            <form action="/settings/llm/{{ profile.id }}/delete" method="post" onsubmit="return confirm('确定删除 {{ profile.name }} 吗？');" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger border-0" title="删除">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                            {% else %}
+                             <button type="button" class="btn btn-sm btn-outline-secondary border-0 disabled" title="默认配置不可删除">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Create/Edit Modal -->
+<div class="modal fade" id="createProfileModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom-0 pb-0">
+        <h5 class="modal-title fw-bold" id="profileModalTitle">新增 LLM 配置</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <form id="profileForm" action="/settings/llm" method="post">
+            <input type="hidden" name="profile_id" id="profile_id">
+            
+            <div class="mb-3">
+                <label class="text-label mb-1">配置名称 <span class="text-danger">*</span></label>
+                <input type="text" name="name" id="name" class="form-control bg-light border-0" required placeholder="例如：DeepSeek-V3">
+            </div>
+            
+            <div class="mb-3">
+                <label class="text-label mb-1">服务商 (Provider) <span class="text-danger">*</span></label>
+                <select name="provider" id="provider" class="form-select bg-light border-0" required onchange="updateDefaults()">
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="openai">OpenAI</option>
+                </select>
+            </div>
+            
+            <div class="mb-3">
+                <label class="text-label mb-1">API Base URL <span class="text-danger">*</span></label>
+                <input type="text" name="base_url" id="base_url" class="form-control bg-light border-0" required placeholder="https://api.deepseek.com">
+            </div>
+            
+            <div class="mb-3">
+                <label class="text-label mb-1">API Key <span class="text-danger">*</span></label>
+                <input type="password" name="api_key" id="api_key" class="form-control bg-light border-0" placeholder="输入 API Key">
+                <div class="form-text small text-muted" id="apiKeyHelp">新增时必填，编辑时留空则不修改。</div>
+            </div>
+            
+            <div class="mb-4">
+                <label class="text-label mb-1">模型名称 (Model)</label>
+                <input type="text" name="model" id="model" class="form-control bg-light border-0" placeholder="deepseek-chat">
+            </div>
+            
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary rounded-pill px-4">保存配置</button>
+            </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+    const modal = document.getElementById('createProfileModal');
+    const form = document.getElementById('profileForm');
+    const title = document.getElementById('profileModalTitle');
+    
+    modal.addEventListener('hidden.bs.modal', () => {
+        form.reset();
+        form.action = "/settings/llm";
+        title.innerText = "新增 LLM 配置";
+        document.getElementById('api_key').required = true;
+        document.getElementById('apiKeyHelp').innerText = "新增时必填，编辑时留空则不修改。";
+    });
+
+    function updateDefaults() {
+        const provider = document.getElementById('provider').value;
+        const baseUrl = document.getElementById('base_url');
+        const model = document.getElementById('model');
+        
+        if (form.action.includes('update')) return; // Don't overwrite on edit
+
+        if (provider === 'deepseek') {
+            baseUrl.value = "https://api.deepseek.com";
+            model.value = "deepseek-chat";
+        } else if (provider === 'openai') {
+            baseUrl.value = "https://api.openai.com/v1";
+            model.value = "gpt-4o";
+        }
+    }
+
+    async function editProfile(id) {
+        try {
+            const response = await fetch(`/api/llm/profiles/${id}`);
+            const data = await response.json();
+            
+            document.getElementById('profile_id').value = data.id;
+            document.getElementById('name').value = data.name;
+            document.getElementById('provider').value = data.provider;
+            document.getElementById('base_url').value = data.base_url;
+            document.getElementById('model').value = data.model;
+            
+            // Handle API Key UI
+            const apiKeyInput = document.getElementById('api_key');
+            apiKeyInput.value = ""; // Clear it
+            apiKeyInput.placeholder = "******** (已隐藏，输入新 Key 以修改)";
+            apiKeyInput.required = false;
+            
+            form.action = `/settings/llm/${id}/update`;
+            title.innerText = "编辑 LLM 配置";
+            
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+        } catch (e) {
+            showToast("获取配置失败", "error");
+        }
+    }
+</script>
+{% endblock %}

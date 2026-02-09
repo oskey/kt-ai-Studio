@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+.DS_Store
+*.db
+kt_ai_studio.db
+kt_ai_studio/kt_ai_studio.db
+output/
+.vscode/
+.idea/
+.trae/

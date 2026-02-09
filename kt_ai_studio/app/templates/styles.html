@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h4 class="fw-bold mb-1">画风管理 (Style Presets)</h4>
+        <p class="text-secondary mb-0">管理项目可用的美术风格预设</p>
+    </div>
+    <button class="btn btn-primary rounded-pill px-4" data-bs-toggle="modal" data-bs-target="#createStyleModal">
+        <i class="bi bi-plus-lg me-2"></i>新增画风
+    </button>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0" style="width: 100%;">
+            <thead class="bg-light">
+                <tr>
+                    <th scope="col" class="ps-4 text-secondary small text-uppercase py-3" style="width: 50px;">ID</th>
+                    <th scope="col" class="text-secondary small text-uppercase py-3" style="width: 150px;">画风名称</th>
+                    <th scope="col" class="text-secondary small text-uppercase py-3" style="width: 200px;">引擎提示</th>
+                    <th scope="col" class="text-secondary small text-uppercase py-3">提示词预览 (Prompt)</th>
+                    <th scope="col" class="text-end pe-4 text-secondary small text-uppercase py-3" style="width: 100px;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for style in styles %}
+                <tr>
+                    <td class="ps-4 fw-bold text-secondary">{{ style.style_id }}</td>
+                    <td>
+                        <span class="fw-bold text-dark">{{ style.name }}</span>
+                    </td>
+                    <td>
+                        <span class="badge bg-light text-secondary border fw-normal text-truncate d-inline-block" style="max-width: 180px;">
+                            {{ style.engine_hint }}
+                        </span>
+                    </td>
+                    <td style="max-width: 0;"> <!-- Trick for ellipsis in flex table cell -->
+                        <div class="d-flex flex-column gap-1">
+                            <!-- POS -->
+                            <div class="d-flex align-items-center" title="{{ style.style_pos }}">
+                                <span class="badge bg-success-subtle text-success me-2" style="font-size: 0.65rem; min-width: 35px;">POS</span>
+                                <span class="text-secondary small text-nowrap overflow-hidden text-truncate w-100">{{ style.style_pos }}</span>
+                            </div>
+                            <!-- NEG -->
+                            <div class="d-flex align-items-center" title="{{ style.style_neg }}">
+                                <span class="badge bg-danger-subtle text-danger me-2" style="font-size: 0.65rem; min-width: 35px;">NEG</span>
+                                <span class="text-secondary small text-nowrap overflow-hidden text-truncate w-100">{{ style.style_neg }}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="text-end pe-4">
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm btn-outline-secondary border-0" onclick="editStyle({{ style.style_id }})" title="编辑">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <form action="/styles/{{ style.style_id }}/delete" method="post" onsubmit="return confirm('确定要删除画风 {{ style.name }} 吗？');" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger border-0" title="删除">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Create/Edit Modal -->
+<div class="modal fade" id="createStyleModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom-0 pb-0">
+        <h5 class="modal-title fw-bold" id="styleModalTitle">新增画风</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <form id="styleForm" action="/styles" method="post">
+            <input type="hidden" name="style_id" id="style_id">
+            
+            <div class="mb-3">
+                <label class="text-label mb-1">画风名称 (Name) <span class="text-danger">*</span></label>
+                <input type="text" name="name" id="name" class="form-control bg-light border-0" required placeholder="例如：赛博朋克 · 写实">
+            </div>
+            
+            <div class="mb-3">
+                <label class="text-label mb-1">引擎提示 (Engine Hint) <span class="text-danger">*</span></label>
+                <input type="text" name="engine_hint" id="engine_hint" class="form-control bg-light border-0" required placeholder="本项目使用 Qwen Image / Wan2.2 图像模型">
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="text-label mb-1">正向画风 (Style Positive) <span class="text-danger">*</span></label>
+                    <textarea name="style_pos" id="style_pos" class="form-control bg-light border-0" rows="5" required placeholder="强制画风正向 Prompt"></textarea>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="text-label mb-1">反向画风 (Style Negative) <span class="text-danger">*</span></label>
+                    <textarea name="style_neg" id="style_neg" class="form-control bg-light border-0" rows="5" required placeholder="强制画风反向 Prompt"></textarea>
+                </div>
+            </div>
+            
+            <div class="mb-4">
+                <label class="text-label mb-1">LLM 约束 (Style Guard) <span class="text-danger">*</span></label>
+                <textarea name="llm_style_guard" id="llm_style_guard" class="form-control bg-light border-0" rows="4" required placeholder="给 DeepSeek 的画风约束说明，禁止漂移..."></textarea>
+                <div class="form-text small">这些指令将注入到 System Prompt 中，强制 LLM 遵守。</div>
+            </div>
+            
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary rounded-pill px-4">保存画风</button>
+            </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+    const styleModal = document.getElementById('createStyleModal');
+    const styleForm = document.getElementById('styleForm');
+    const modalTitle = document.getElementById('styleModalTitle');
+    
+    styleModal.addEventListener('hidden.bs.modal', () => {
+        styleForm.reset();
+        styleForm.action = "/styles";
+        modalTitle.innerText = "新增画风";
+        document.getElementById('style_id').value = "";
+    });
+
+    async function editStyle(id) {
+        try {
+            const response = await fetch(`/styles/${id}`);
+            const data = await response.json();
+            
+            document.getElementById('style_id').value = data.style_id;
+            document.getElementById('name').value = data.name;
+            document.getElementById('engine_hint').value = data.engine_hint;
+            document.getElementById('style_pos').value = data.style_pos;
+            document.getElementById('style_neg').value = data.style_neg;
+            document.getElementById('llm_style_guard').value = data.llm_style_guard;
+            
+            styleForm.action = `/styles/${id}/update`;
+            modalTitle.innerText = "编辑画风";
+            
+            const bsModal = new bootstrap.Modal(styleModal);
+            bsModal.show();
+        } catch (e) {
+            showToast("获取画风详情失败", "error");
+        }
+    }
+</script>
+{% endblock %}

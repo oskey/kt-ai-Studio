@@ -1,0 +1,1005 @@
+{% extends "base.html" %}
+
+{% block styles %}
+<style>
+    .app-avatar {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        flex-shrink: 0;
+    }
+    
+    /* Modern MultiSelect with Tags - iOS Style Unified */
+       .multi-select-wrapper {
+           position: relative;
+           background-color: #f3f4f6;
+           border: 1px solid transparent;
+           border-radius: 12px;
+           padding: 0.5rem 2.5rem 0.5rem 0.5rem; /* Right padding for arrow */
+           min-height: 50px;
+           cursor: text;
+           transition: all 0.2s ease;
+           display: flex;
+           flex-wrap: wrap;
+           align-items: center;
+           gap: 0.5rem;
+       }
+       .multi-select-arrow {
+           position: absolute;
+           right: 1rem;
+           top: 50%;
+           transform: translateY(-50%);
+           color: #adb5bd;
+           pointer-events: none;
+           transition: transform 0.2s;
+           font-size: 1.2rem;
+       }
+       .multi-select-wrapper:focus-within .multi-select-arrow {
+           transform: translateY(-50%) rotate(180deg);
+           color: #0d6efd;
+       }
+       .multi-select-wrapper:focus-within {
+           background-color: #fff;
+           border-color: #0d6efd;
+           box-shadow: 0 0 0 4px rgba(13, 110, 253, 0.1);
+       }
+       
+       .multi-select-input {
+           flex: 1;
+           min-width: 120px;
+           border: none;
+           background: transparent;
+           outline: none;
+           padding: 0.25rem;
+           font-size: 1rem;
+           color: #333;
+           height: 32px; /* Match tag height */
+       }
+       
+       .selected-tags {
+           display: contents; /* Let children participate in flex layout */
+       }
+
+       .tag-badge {
+           display: inline-flex;
+           align-items: center;
+           background-color: #fff;
+           color: #333;
+           border: 1px solid #e9ecef;
+           border-radius: 8px;
+           padding: 0.35rem 0.6rem 0.35rem 0.4rem; /* Increased padding */
+           font-size: 1rem; /* Increased font size */
+           font-weight: 500;
+           user-select: none;
+           box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+           height: 36px; /* Increased height */
+           animation: scaleIn 0.15s ease-out;
+       }
+       @keyframes scaleIn {
+           from { transform: scale(0.9); opacity: 0; }
+           to { transform: scale(1); opacity: 1; }
+       }
+       
+       .tag-avatar {
+           width: 24px;
+           height: 24px;
+           border-radius: 50%;
+           display: flex;
+           align-items: center;
+           justify-content: center;
+           font-size: 0.7rem;
+           margin-right: 0.5rem;
+           flex-shrink: 0;
+       }
+       .tag-avatar.female { background-color: #ffeef2; color: #d63384; }
+       .tag-avatar.male { background-color: #e7f5ff; color: #0d6efd; }
+       .tag-avatar.other { background-color: #f8f9fa; color: #6c757d; }
+
+       .tag-remove {
+           margin-left: 0.5rem;
+           cursor: pointer;
+           color: #adb5bd;
+           display: flex;
+           align-items: center;
+           justify-content: center;
+           width: 18px;
+           height: 18px;
+           border-radius: 50%;
+           background-color: transparent;
+           transition: all 0.2s;
+       }
+       .tag-remove:hover {
+           background-color: #e9ecef;
+           color: #dc3545;
+       }
+
+       .multi-select-dropdown {
+           position: absolute;
+           top: calc(100% + 8px);
+           left: 0;
+           right: 0;
+           z-index: 1060; /* Higher than modal (1055) */
+           background: white;
+           border: none;
+           border-radius: 12px;
+           max-height: 300px;
+           overflow-y: auto;
+           display: none;
+           box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.15);
+           padding: 0.5rem;
+       }
+       .multi-select-dropdown.show {
+           display: block;
+           animation: fadeInUp 0.2s ease-out;
+       }
+       .multi-select-item {
+           padding: 0.75rem 1rem;
+           margin-bottom: 2px;
+           cursor: pointer;
+           color: #333;
+           border-radius: 8px;
+           display: flex;
+           align-items: center;
+           gap: 0.75rem;
+           transition: background-color 0.1s;
+           font-size: 1rem; /* Explicit font size */
+       }
+       .multi-select-item:hover {
+           background-color: #f8f9fa;
+       }
+       .multi-select-item.selected {
+           display: none;
+       }
+       .item-avatar {
+           width: 32px;
+           height: 32px;
+           border-radius: 50%;
+           display: flex;
+           align-items: center;
+           justify-content: center;
+           font-size: 0.9rem;
+           flex-shrink: 0;
+       }
+       .item-avatar.female { background-color: #ffeef2; color: #d63384; }
+       .item-avatar.male { background-color: #e7f5ff; color: #0d6efd; }
+       .item-avatar.other { background-color: #f8f9fa; color: #6c757d; }
+
+       .list-thumbnail {
+           width: 48px;
+           height: 48px;
+           object-fit: cover;
+           border-radius: 8px;
+           cursor: zoom-in;
+           transition: transform 0.2s;
+           border: 1px solid #dee2e6;
+           background-color: #f8f9fa;
+       }
+       .list-thumbnail:hover {
+           transform: scale(1.05);
+           box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+       }
+   </style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb small">
+            <li class="breadcrumb-item"><a href="/projects" class="text-decoration-none text-secondary">项目列表</a></li>
+            <li class="breadcrumb-item active text-dark fw-medium" aria-current="page">{{ project.name }}</li>
+        </ol>
+    </nav>
+
+    <div class="row g-4">
+        <!-- Project Info (Sidebar) -->
+        <div class="col-lg-3">
+            <div class="card mb-4 sticky-top" style="top: 100px; z-index: 1;">
+                <div class="card-body">
+                    <div class="text-label mb-3">当前项目</div>
+                    <h4 class="fw-bold mb-2">{{ project.name }}</h4>
+                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill mb-3">
+                        {{ project.project_code }}
+                    </span>
+                    
+                    <div class="text-secondary small mb-4">
+                        {{ project.mark or '暂无备注' }}
+                    </div>
+
+                    <div class="d-flex align-items-center text-muted small border-top pt-3">
+                        <i class="bi bi-calendar3 me-2"></i>
+                        创建于 {{ project.created_at.strftime('%Y-%m-%d') }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-lg-9">
+            <!-- Tabs -->
+            <ul class="nav nav-pills mb-4" id="pills-tab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active rounded-pill px-4" id="pills-players-tab" data-bs-toggle="pill" data-bs-target="#pills-players" type="button" role="tab" aria-selected="true">
+                        <i class="bi bi-people me-2"></i>角色列表
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link rounded-pill px-4" id="pills-scenes-tab" data-bs-toggle="pill" data-bs-target="#pills-scenes" type="button" role="tab" aria-selected="false">
+                        <i class="bi bi-image me-2"></i>场景列表
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="pills-tabContent">
+                <!-- Players Tab -->
+                <div class="tab-pane fade show active" id="pills-players" role="tabpanel">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0">角色列表</h5>
+                        <button type="button" class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#createPlayerModal">
+                            <i class="bi bi-person-plus-fill me-1"></i>添加角色
+                        </button>
+                    </div>
+
+                    <div class="d-flex flex-column">
+                        {% for player in players %}
+                        <div class="app-list-item">
+                            <!-- Avatar -->
+                            <div class="app-avatar me-3 {% if player.player_sex == 'female' %}female{% else %}male{% endif %}">
+                                {% if player.player_sex == 'female' %}
+                                <i class="bi bi-gender-female"></i>
+                                {% elif player.player_sex == 'male' %}
+                                <i class="bi bi-gender-male"></i>
+                                {% else %}
+                                <i class="bi bi-gender-ambiguous"></i>
+                                {% endif %}
+                            </div>
+
+                            <!-- Info -->
+                            <div class="flex-grow-1 min-width-0">
+                                <div class="d-flex align-items-center mb-1">
+                                    <h6 class="mb-0 fw-bold text-dark me-2 text-truncate">{{ player.player_name }}</h6>
+                                    <!-- Status Badge -->
+                                    {% if player.status == 'draft' %}
+                                    <span class="badge bg-secondary-subtle text-secondary rounded-pill fw-normal" style="font-size: 0.7rem;">草稿</span>
+                                    {% elif player.status == 'ready' %}
+                                    <span class="badge bg-info-subtle text-info-emphasis rounded-pill fw-normal" style="font-size: 0.7rem;">就绪</span>
+                                    {% elif player.status == 'done' %}
+                                    <span class="badge bg-success-subtle text-success rounded-pill fw-normal" style="font-size: 0.7rem;">完成</span>
+                                    {% else %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill fw-normal" style="font-size: 0.7rem;">{{ player.status }}</span>
+                                    {% endif %}
+                                </div>
+                                <p class="text-secondary small mb-0 text-truncate" title="{{ player.player_mark or '' }}">
+                                    {{ player.player_mark or '暂无描述' }}
+                                </p>
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="d-flex align-items-center gap-2">
+                                {% if player.base_image_path %}
+                                <img src="{{ to_web_path(player.base_image_path) }}" class="list-thumbnail" onclick="showPreview(this.src)" title="点击预览" style="width: 48px; height: 48px; object-fit: cover;">
+                                {% endif %}
+                                <a href="/players/{{ player.id }}" class="btn btn-light btn-sm rounded-pill px-3 fw-medium text-primary bg-indigo-subtle">
+                                    管理
+                                </a>
+                                <div class="dropdown">
+                                    <button class="btn btn-icon" type="button" data-bs-toggle="dropdown">
+                                        <i class="bi bi-three-dots-vertical"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-3">
+                                        <li>
+                                            <button class="dropdown-item py-2" 
+                                                    data-id="{{ player.id }}"
+                                                    data-name="{{ player.player_name }}"
+                                                    data-sex="{{ player.player_sex }}"
+                                                    data-mark="{{ player.player_mark or '' }}"
+                                                    onclick="editPlayer(this.getAttribute('data-id'), this.getAttribute('data-name'), this.getAttribute('data-sex'), this.getAttribute('data-mark'))">
+                                                <i class="bi bi-pencil me-2 text-secondary"></i>编辑角色
+                                            </button>
+                                        </li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li>
+                                            <button class="dropdown-item py-2 text-danger" onclick="confirmDeletePlayer('{{ player.id }}', '{{ player.player_name }}')">
+                                                <i class="bi bi-trash me-2"></i>删除角色
+                                            </button>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-5">
+                            <div class="bg-white rounded-circle d-inline-flex align-items-center justify-content-center shadow-sm mb-3" style="width: 80px; height: 80px;">
+                                <i class="bi bi-people text-secondary fs-2"></i>
+                            </div>
+                            <h6 class="text-dark">暂无角色</h6>
+                            <p class="text-secondary small">添加一个角色开始生成吧</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Scenes Tab -->
+                <div class="tab-pane fade" id="pills-scenes" role="tabpanel">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0">场景列表</h5>
+                        <button type="button" class="btn btn-primary btn-sm rounded-pill px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#createSceneModal">
+                            <i class="bi bi-plus-lg me-1"></i>添加场景
+                        </button>
+                    </div>
+
+                    <div class="d-flex flex-column gap-2">
+                        {% if scenes %}
+                            {% for episode, scene_list in scenes|groupby('episode') %}
+                                {% if scene_list|length == 1 %}
+                                    <!-- Single Scene in Episode -->
+                                    {% set scene = scene_list[0] %}
+                                    <div class="app-list-item">
+                                        <!-- Icon -->
+                                        <div class="app-avatar me-3 bg-indigo-subtle text-indigo position-relative">
+                                            <i class="bi bi-image"></i>
+                                            <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-dark text-white border border-light" style="font-size: 0.6rem;">
+                                                E{{ scene.episode }}
+                                            </span>
+                                        </div>
+
+                                        <!-- Info -->
+                                        <div class="flex-grow-1 min-width-0">
+                                            <div class="d-flex align-items-center mb-1">
+                                                <h6 class="mb-0 fw-bold text-dark me-2 text-truncate">
+                                                    <span class="text-secondary fw-normal me-1 small">[第{{ scene.episode }}集-{{ scene.shot }}镜]</span>
+                                                    {{ scene.name }}
+                                                </h6>
+                                                <!-- Status Badge -->
+                                                {% if scene.status == 'draft' %}
+                                                <span class="badge bg-secondary-subtle text-secondary rounded-pill fw-normal" style="font-size: 0.7rem;">草稿</span>
+                                                {% elif scene.status == 'generated_prompt' %}
+                                                <span class="badge bg-info-subtle text-info-emphasis rounded-pill fw-normal" style="font-size: 0.7rem;">已生成 Prompt</span>
+                                                {% elif scene.status == 'generated' %}
+                                                <span class="badge bg-success-subtle text-success rounded-pill fw-normal" style="font-size: 0.7rem;">已生成</span>
+                                                {% elif scene.status == 'failed' %}
+                                                <span class="badge bg-danger-subtle text-danger rounded-pill fw-normal" style="font-size: 0.7rem;">失败</span>
+                                                {% else %}
+                                                <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill fw-normal" style="font-size: 0.7rem;">{{ scene.status }}</span>
+                                                {% endif %}
+                                            </div>
+                                            <div class="text-secondary small mb-1 text-truncate" title="{{ scene.base_desc }}">
+                                                {{ scene.base_desc }}
+                                            </div>
+                                            {% if scene.related_players %}
+                                            <div class="d-flex align-items-center flex-wrap gap-1">
+                                                <i class="bi bi-people-fill text-primary small me-1"></i>
+                                                {% for p in scene.related_players %}
+                                                <span class="badge bg-secondary-subtle text-secondary fw-normal border" style="font-size: 0.75rem;">{{ p.player_name }}</span>
+                                                {% endfor %}
+                                            </div>
+                                            {% endif %}
+                                        </div>
+
+                                        <!-- Actions -->
+                                        <div class="d-flex align-items-center gap-2">
+                                            {% if scene.base_image_path %}
+                                            <img src="{{ to_web_path(scene.base_image_path) }}" class="list-thumbnail" onclick="showPreview(this.src)" title="点击预览">
+                                            {% endif %}
+                                            <a href="/scenes/{{ scene.id }}" class="btn btn-light btn-sm rounded-pill px-3 fw-medium text-primary bg-indigo-subtle">
+                                                管理
+                                            </a>
+                                            <div class="dropdown">
+                                                <button class="btn btn-icon" type="button" data-bs-toggle="dropdown">
+                                                    <i class="bi bi-three-dots-vertical"></i>
+                                                </button>
+                                                <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-3">
+                                                    <li>
+                                                        {% set p_ids = scene.related_players|map(attribute='id')|join(',') %}
+                                                        <button class="dropdown-item py-2" 
+                                                                data-id="{{ scene.id }}"
+                                                                data-name="{{ scene.name }}"
+                                                                data-type="{{ scene.scene_type }}"
+                                                                data-desc="{{ scene.base_desc }}"
+                                                                data-episode="{{ scene.episode }}"
+                                                                data-shot="{{ scene.shot }}"
+                                                                data-players="{{ p_ids }}"
+                                                                onclick="editScene(this.getAttribute('data-id'), this.getAttribute('data-name'), this.getAttribute('data-type'), this.getAttribute('data-desc'), this.getAttribute('data-episode'), this.getAttribute('data-shot'), this.getAttribute('data-players'))">
+                                                            <i class="bi bi-pencil me-2 text-secondary"></i>编辑场景
+                                                        </button>
+                                                    </li>
+                                                    <li><hr class="dropdown-divider"></li>
+                                                    <li>
+                                                        <button class="dropdown-item py-2 text-danger" onclick="confirmDeleteScene('{{ scene.id }}', '{{ scene.name }}')">
+                                                            <i class="bi bi-trash me-2"></i>删除场景
+                                                        </button>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% else %}
+                                    <!-- Multiple Scenes Group -->
+                                    <div class="card border border-light shadow-sm mb-2">
+                                        <div class="card-header bg-white border-0 py-3 d-flex align-items-center justify-content-between cursor-pointer" 
+                                             data-bs-toggle="collapse" 
+                                             data-bs-target="#episode-{{ episode }}" 
+                                             aria-expanded="false">
+                                            <div class="d-flex align-items-center">
+                                                <div class="bg-primary-subtle text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 36px; height: 36px;">
+                                                    <i class="bi bi-collection-play-fill"></i>
+                                                </div>
+                                                <div>
+                                                    <h6 class="fw-bold mb-0 text-dark">第 {{ episode }} 集</h6>
+                                                    <small class="text-secondary">{{ scene_list|length }} 个镜头</small>
+                                                </div>
+                                            </div>
+                                            <i class="bi bi-chevron-down text-secondary"></i>
+                                        </div>
+                                        <div id="episode-{{ episode }}" class="collapse">
+                                            <div class="card-body pt-0 ps-5">
+                                                <div class="d-flex flex-column gap-2 border-start ps-3 border-2 border-light">
+                                                    {% for scene in scene_list|sort(attribute='shot') %}
+                                                    <div class="app-list-item py-2 border-bottom-0 bg-light-subtle">
+                                                        <div class="flex-grow-1 min-width-0">
+                                                            <div class="d-flex align-items-center mb-1">
+                                                                <span class="badge bg-white text-dark border me-2 shadow-sm" style="min-width: 40px;">{{ scene.shot }}镜</span>
+                                                                <h6 class="mb-0 fw-bold text-dark me-2 text-truncate">{{ scene.name }}</h6>
+                                                                <!-- Status Badge (Simplified) -->
+                                                                {% if scene.status == 'generated' %}
+                                                                <i class="bi bi-check-circle-fill text-success" title="已生成"></i>
+                                                                {% elif scene.status == 'failed' %}
+                                                                <i class="bi bi-x-circle-fill text-danger" title="失败"></i>
+                                                                {% endif %}
+                                                            </div>
+                                                            <div class="text-secondary small mb-1 text-truncate" style="max-width: 300px;" title="{{ scene.base_desc }}">
+                                                                {{ scene.base_desc }}
+                                                            </div>
+                                                            {% if scene.related_players %}
+                                                            <div class="d-flex align-items-center flex-wrap gap-1">
+                                                                {% for p in scene.related_players %}
+                                                                <span class="badge bg-secondary-subtle text-secondary fw-normal border" style="font-size: 0.75rem;">{{ p.player_name }}</span>
+                                                                {% endfor %}
+                                                            </div>
+                                                            {% endif %}
+                                                        </div>
+                                                        <!-- Actions -->
+                                                        <div class="d-flex align-items-center gap-2">
+                                                            {% if scene.base_image_path %}
+                                                            <img src="{{ to_web_path(scene.base_image_path) }}" class="list-thumbnail" onclick="showPreview(this.src)" title="点击预览" style="width: 32px; height: 32px;">
+                                                            {% endif %}
+                                                            <a href="/scenes/{{ scene.id }}" class="btn btn-sm btn-outline-primary rounded-pill px-3" style="font-size: 0.75rem;">管理</a>
+                                                            <div class="dropdown">
+                                                                <button class="btn btn-icon btn-sm" type="button" data-bs-toggle="dropdown">
+                                                                    <i class="bi bi-three-dots-vertical"></i>
+                                                                </button>
+                                                                <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-3">
+                                                                    <li>
+                                                                        {% set p_ids = scene.related_players|map(attribute='id')|join(',') %}
+                                                                        <button class="dropdown-item py-2" 
+                                                                                data-id="{{ scene.id }}"
+                                                                                data-name="{{ scene.name }}"
+                                                                                data-type="{{ scene.scene_type }}"
+                                                                                data-desc="{{ scene.base_desc }}"
+                                                                                data-episode="{{ scene.episode }}"
+                                                                                data-shot="{{ scene.shot }}"
+                                                                                data-players="{{ p_ids }}"
+                                                                                onclick="editScene(this.getAttribute('data-id'), this.getAttribute('data-name'), this.getAttribute('data-type'), this.getAttribute('data-desc'), this.getAttribute('data-episode'), this.getAttribute('data-shot'), this.getAttribute('data-players'))">
+                                                                            <i class="bi bi-pencil me-2 text-secondary"></i>编辑场景
+                                                                        </button>
+                                                                    </li>
+                                                                    <li><hr class="dropdown-divider"></li>
+                                                                    <li>
+                                                                        <button class="dropdown-item py-2 text-danger" onclick="confirmDeleteScene('{{ scene.id }}', '{{ scene.name }}')">
+                                                                            <i class="bi bi-trash me-2"></i>删除场景
+                                                                        </button>
+                                                                    </li>
+                                                                </ul>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    {% endfor %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-center py-5">
+                                <div class="bg-white rounded-circle d-inline-flex align-items-center justify-content-center shadow-sm mb-3" style="width: 80px; height: 80px;">
+                                    <i class="bi bi-image text-secondary fs-2"></i>
+                                </div>
+                                <h6 class="text-dark">暂无场景</h6>
+                                <p class="text-secondary small">添加一个场景开始生成吧</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Scene Modal -->
+<div class="modal fade" id="createSceneModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">添加新场景</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="/projects/{{ project.id }}/scenes" method="post">
+                <div class="modal-body pt-4">
+                    <div class="row g-3 mb-3">
+                        <div class="col-6">
+                            <label class="text-label mb-1">第几集</label>
+                            <input type="number" name="episode" class="form-control bg-light border-0" value="1" min="1" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="text-label mb-1">第几镜</label>
+                            <input type="number" name="shot" class="form-control bg-light border-0" value="1" min="1" required>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="text-label mb-1">场景名称 <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control form-control-lg bg-light border-0" placeholder="例如：古宅书房" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="text-label mb-1">绑定角色 (多选)</label>
+                        <!-- Modern MultiSelect for Create -->
+                        <div class="multi-select-container" id="create-player-select">
+                            <div class="multi-select-wrapper" onclick="this.querySelector('.multi-select-input').focus()">
+                                <div class="selected-tags" id="create-tags"></div>
+                                <input type="text" class="multi-select-input" placeholder="搜索角色..." oninput="multiSelectFilter('create', this.value)" onfocus="multiSelectShow('create')" onblur="setTimeout(() => multiSelectHide('create'), 200)">
+                                <i class="bi bi-chevron-down multi-select-arrow"></i>
+                            </div>
+                            
+                            <div class="multi-select-dropdown" id="create-dropdown">
+                                {% for player in players %}
+                                <div class="multi-select-item" 
+                                     data-value="{{ player.id }}" 
+                                     data-name="{{ player.player_name }}"
+                                     data-sex="{{ player.player_sex }}"
+                                     onclick="multiSelectAdd('create', '{{ player.id }}', '{{ player.player_name }}')">
+                                     <div class="item-avatar {{ player.player_sex }}">
+                                         {% if player.player_sex == 'female' %}<i class="bi bi-gender-female"></i>
+                                         {% elif player.player_sex == 'male' %}<i class="bi bi-gender-male"></i>
+                                         {% else %}<i class="bi bi-gender-ambiguous"></i>{% endif %}
+                                     </div>
+                                     <span>{{ player.player_name }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        
+                        <!-- Hidden Select for Form Submission -->
+                        <select name="related_players" id="create_related_players" class="d-none" multiple>
+                            {% for player in players %}
+                            <option value="{{ player.id }}">{{ player.player_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="text-label mb-1">场景类型</label>
+                        <select name="scene_type" class="form-select bg-light border-0">
+                            <option value="indoor">室内 (Indoor)</option>
+                            <option value="outdoor">室外 (Outdoor)</option>
+                            <option value="special">特殊/虚空 (Special)</option>
+                        </select>
+                    </div>
+                    <div class="mb-0">
+                        <label class="text-label mb-1">场景基础描述 <span class="text-danger">*</span></label>
+                        <textarea name="base_desc" class="form-control bg-light border-0" rows="4" placeholder="例如：古代书房，木梁结构，青石地面，光线柔和..." required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0 pb-4">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">添加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Scene Confirmation Modal -->
+<div class="modal fade" id="deleteSceneModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-body text-center p-4">
+                <div class="text-danger mb-3">
+                    <i class="bi bi-exclamation-circle-fill display-4"></i>
+                </div>
+                <h5 class="fw-bold mb-2">确认删除?</h5>
+                <p class="text-secondary small mb-4">
+                    您确定要删除场景 <strong id="deleteSceneName" class="text-dark"></strong> 吗？所有生成图片将无法恢复。
+                </p>
+                <form id="deleteSceneForm" method="post" class="d-grid gap-2">
+                    <button type="submit" class="btn btn-danger rounded-pill">确认删除</button>
+                    <button type="button" class="btn btn-light rounded-pill" data-bs-dismiss="modal">取消</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Player Modal -->
+<div class="modal fade" id="createPlayerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">添加新角色</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="/projects/{{ project.id }}/players" method="post">
+                <div class="modal-body pt-4">
+                    <div class="mb-3">
+                        <label class="text-label mb-1">角色姓名 <span class="text-danger">*</span></label>
+                        <input type="text" name="player_name" class="form-control form-control-lg bg-light border-0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-label mb-1">性别</label>
+                        <select name="player_sex" class="form-select bg-light border-0">
+                            <option value="female">女性 (Female)</option>
+                            <option value="male">男性 (Male)</option>
+                            <option value="other">其他 (Other)</option>
+                        </select>
+                    </div>
+                    <div class="mb-0">
+                        <label class="text-label mb-1">外貌/属性备注</label>
+                        <textarea name="player_mark" class="form-control bg-light border-0" rows="3" placeholder="例如：银色长发，蓝色眼睛..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0 pb-4">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">添加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Player Modal -->
+<div class="modal fade" id="editPlayerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">编辑角色</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editPlayerForm" method="post">
+                <div class="modal-body pt-4">
+                    <div class="mb-3">
+                        <label class="text-label mb-1">角色姓名 <span class="text-danger">*</span></label>
+                        <input type="text" name="player_name" id="editPlayerName" class="form-control form-control-lg bg-light border-0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-label mb-1">性别</label>
+                        <select name="player_sex" id="editPlayerSex" class="form-select bg-light border-0">
+                            <option value="female">女性 (Female)</option>
+                            <option value="male">男性 (Male)</option>
+                            <option value="other">其他 (Other)</option>
+                        </select>
+                    </div>
+                    <div class="mb-0">
+                        <label class="text-label mb-1">外貌/属性备注</label>
+                        <textarea name="player_mark" id="editPlayerMark" class="form-control bg-light border-0" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0 pb-4">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">保存修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Scene Modal -->
+<div class="modal fade" id="editSceneModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">编辑场景</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form id="editSceneForm" method="post">
+                <div class="modal-body pt-4">
+                    <div class="row g-3 mb-3">
+                         <div class="col-6">
+                             <label class="text-label mb-1">第几集</label>
+                             <input type="number" name="episode" id="editSceneEpisode" class="form-control bg-light border-0" min="1" required>
+                         </div>
+                         <div class="col-6">
+                             <label class="text-label mb-1">第几镜</label>
+                             <input type="number" name="shot" id="editSceneShot" class="form-control bg-light border-0" min="1" required>
+                         </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="text-label mb-1">场景名称 <span class="text-danger">*</span></label>
+                        <input type="text" name="name" id="editSceneName" class="form-control form-control-lg bg-light border-0" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="text-label mb-1">绑定角色 (多选)</label>
+                        <!-- Modern MultiSelect for Edit -->
+                        <div class="multi-select-container" id="edit-player-select">
+                            <div class="multi-select-wrapper" onclick="this.querySelector('.multi-select-input').focus()">
+                                <div class="selected-tags" id="edit-tags"></div>
+                                <input type="text" class="multi-select-input" placeholder="搜索角色..." oninput="multiSelectFilter('edit', this.value)" onfocus="multiSelectShow('edit')" onblur="setTimeout(() => multiSelectHide('edit'), 200)">
+                                <i class="bi bi-chevron-down multi-select-arrow"></i>
+                            </div>
+                            
+                            <div class="multi-select-dropdown" id="edit-dropdown">
+                                {% for player in players %}
+                                <div class="multi-select-item" 
+                                     data-value="{{ player.id }}" 
+                                     data-name="{{ player.player_name }}"
+                                     data-sex="{{ player.player_sex }}"
+                                     onclick="multiSelectAdd('edit', '{{ player.id }}', '{{ player.player_name }}')">
+                                     <div class="item-avatar {{ player.player_sex }}">
+                                         {% if player.player_sex == 'female' %}<i class="bi bi-gender-female"></i>
+                                         {% elif player.player_sex == 'male' %}<i class="bi bi-gender-male"></i>
+                                         {% else %}<i class="bi bi-gender-ambiguous"></i>{% endif %}
+                                     </div>
+                                     <span>{{ player.player_name }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <!-- Hidden Select for Form Submission -->
+                        <select name="related_players" id="edit_related_players" class="d-none" multiple>
+                            {% for player in players %}
+                            <option value="{{ player.id }}">{{ player.player_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="text-label mb-1">场景类型</label>
+                        <select name="scene_type" id="editSceneType" class="form-select bg-light border-0">
+                            <option value="indoor">室内 (Indoor)</option>
+                            <option value="outdoor">室外 (Outdoor)</option>
+                            <option value="special">特殊/虚空 (Special)</option>
+                        </select>
+                    </div>
+                    <div class="mb-0">
+                        <label class="text-label mb-1">场景基础描述 <span class="text-danger">*</span></label>
+                        <textarea name="base_desc" id="editSceneDesc" class="form-control bg-light border-0" rows="4" required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0 pb-4">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4">保存修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Player Confirmation Modal -->
+<div class="modal fade" id="deletePlayerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-body text-center p-4">
+                <div class="text-danger mb-3">
+                    <i class="bi bi-exclamation-circle-fill display-4"></i>
+                </div>
+                <h5 class="fw-bold mb-2">确认删除?</h5>
+                <p class="text-secondary small mb-4">
+                    您确定要删除角色 <strong id="deletePlayerName" class="text-dark"></strong> 吗？所有生成图片将无法恢复。
+                </p>
+                <form id="deletePlayerForm" method="post" class="d-grid gap-2">
+                    <button type="submit" class="btn btn-danger rounded-pill">确认删除</button>
+                    <button type="button" class="btn btn-light rounded-pill" data-bs-dismiss="modal">取消</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Preview Image Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width: 90vw;">
+        <div class="modal-content bg-transparent border-0 shadow-none">
+            <div class="modal-body p-0 text-center position-relative">
+                <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" data-bs-dismiss="modal" aria-label="Close" style="z-index: 1056; background-color: rgba(0,0,0,0.5); padding: 1rem; border-radius: 50%;"></button>
+                <img id="previewImage" src="" class="img-fluid rounded-3 shadow-lg" style="max-height: 90vh; max-width: 100%; object-fit: contain;">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Tab Persistence
+    document.addEventListener("DOMContentLoaded", function(){
+        var activeTab = localStorage.getItem('activeTab_project_{{ project.id }}');
+        if(activeTab){
+            var tabTrigger = document.querySelector('#' + activeTab);
+            if(tabTrigger) {
+                var tab = new bootstrap.Tab(tabTrigger);
+                tab.show();
+            }
+        }
+        
+        var tabElsv = document.querySelectorAll('button[data-bs-toggle="pill"]');
+        tabElsv.forEach(function(tabEl) {
+            tabEl.addEventListener('shown.bs.tab', function (event) {
+                localStorage.setItem('activeTab_project_{{ project.id }}', event.target.id);
+            });
+        });
+    });
+
+    // Image Preview
+    function showPreview(src) {
+        document.getElementById('previewImage').src = src;
+        var myModal = new bootstrap.Modal(document.getElementById('previewModal'));
+        myModal.show();
+    }
+
+    // MultiSelect Logic - Global Scope
+    const selectedPlayers = {
+        'create': new Set(),
+        'edit': new Set()
+    };
+    const hideTimeouts = {
+        'create': null,
+        'edit': null
+    };
+
+    window.multiSelectShow = function(type) {
+        if (hideTimeouts[type]) {
+            clearTimeout(hideTimeouts[type]);
+            hideTimeouts[type] = null;
+        }
+        document.getElementById(`${type}-dropdown`).classList.add('show');
+    }
+
+    window.multiSelectHide = function(type) {
+        // Delayed hide to allow click event on items
+        hideTimeouts[type] = setTimeout(() => {
+            document.getElementById(`${type}-dropdown`).classList.remove('show');
+            hideTimeouts[type] = null;
+        }, 200);
+    }
+
+    window.multiSelectFilter = function(type, value) {
+        const dropdown = document.getElementById(`${type}-dropdown`);
+        const items = dropdown.querySelectorAll('.multi-select-item');
+        const filter = value.toLowerCase();
+        
+        let hasVisible = false;
+        items.forEach(item => {
+            const name = item.getAttribute('data-name').toLowerCase();
+            if (name.includes(filter)) {
+                item.style.display = 'block';
+                hasVisible = true;
+            } else {
+                item.style.display = 'none';
+            }
+        });
+        
+        if (hasVisible || value === '') {
+            window.multiSelectShow(type);
+        } else {
+            document.getElementById(`${type}-dropdown`).classList.remove('show');
+        }
+    }
+
+    window.multiSelectAdd = function(type, id, name) {
+        if (selectedPlayers[type].has(id)) return; // Already selected
+        
+        selectedPlayers[type].add(id);
+        renderTags(type);
+        syncHiddenSelect(type);
+        
+        // Reset input
+        const container = document.getElementById(`${type}-player-select`);
+        const input = container.querySelector('.multi-select-input');
+        input.value = '';
+        window.multiSelectFilter(type, ''); // Reset filter
+        // Keep focus
+        input.focus();
+    }
+
+    window.multiSelectRemove = function(type, id) {
+        selectedPlayers[type].delete(id.toString()); // Ensure string for set comparison
+        renderTags(type);
+        syncHiddenSelect(type);
+    }
+
+    function renderTags(type) {
+        const container = document.getElementById(`${type}-tags`);
+        container.innerHTML = '';
+        
+        selectedPlayers[type].forEach(id => {
+            // Find name from dropdown data
+            const dropdownItem = document.querySelector(`#${type}-dropdown .multi-select-item[data-value="${id}"]`);
+            const name = dropdownItem ? dropdownItem.getAttribute('data-name') : 'Unknown';
+            const sex = dropdownItem ? dropdownItem.getAttribute('data-sex') : 'other';
+            
+            let iconClass = 'bi-gender-ambiguous';
+            if (sex === 'female') iconClass = 'bi-gender-female';
+            if (sex === 'male') iconClass = 'bi-gender-male';
+
+            const tag = document.createElement('div');
+            tag.className = 'tag-badge';
+            tag.innerHTML = `
+                <div class="tag-avatar ${sex}">
+                    <i class="bi ${iconClass}"></i>
+                </div>
+                ${name}
+                <span class="tag-remove" onclick="event.stopPropagation(); window.multiSelectRemove('${type}', '${id}')">
+                    <i class="bi bi-x"></i>
+                </span>
+            `;
+            container.appendChild(tag);
+        });
+        
+        // Update dropdown items appearance
+        const items = document.querySelectorAll(`#${type}-dropdown .multi-select-item`);
+        items.forEach(item => {
+            if (selectedPlayers[type].has(item.getAttribute('data-value'))) {
+                item.classList.add('selected');
+                item.style.display = 'none'; // Hide selected items from dropdown
+            } else {
+                item.classList.remove('selected');
+                item.style.display = 'flex'; // Show unselected items (flex for layout)
+            }
+        });
+    }
+
+    function syncHiddenSelect(type) {
+        const select = document.getElementById(`${type}_related_players`);
+        Array.from(select.options).forEach(opt => {
+            opt.selected = selectedPlayers[type].has(opt.value);
+        });
+    }
+
+    function editPlayer(id, name, sex, mark) {
+        document.getElementById('editPlayerName').value = name;
+        document.getElementById('editPlayerSex').value = sex;
+        document.getElementById('editPlayerMark').value = mark;
+        document.getElementById('editPlayerForm').action = '/players/' + id + '/edit';
+        var editModal = new bootstrap.Modal(document.getElementById('editPlayerModal'));
+        editModal.show();
+    }
+
+    function editScene(id, name, type, desc, episode, shot, playerIdsStr) {
+        document.getElementById('editSceneName').value = name;
+        document.getElementById('editSceneType').value = type;
+        document.getElementById('editSceneDesc').value = desc;
+        document.getElementById('editSceneEpisode').value = episode;
+        document.getElementById('editSceneShot').value = shot;
+        document.getElementById('editSceneForm').action = '/scenes/' + id + '/update';
+        
+        // Reset and Set MultiSelect
+        selectedPlayers['edit'].clear();
+        if (playerIdsStr) {
+            const ids = playerIdsStr.split(',');
+            ids.forEach(id => selectedPlayers['edit'].add(id));
+        }
+        renderTags('edit');
+        syncHiddenSelect('edit');
+
+        var editModal = new bootstrap.Modal(document.getElementById('editSceneModal'));
+        editModal.show();
+    }
+
+    function confirmDeletePlayer(id, name) {
+        document.getElementById('deletePlayerName').textContent = name;
+        document.getElementById('deletePlayerForm').action = '/players/' + id + '/delete';
+        var deleteModal = new bootstrap.Modal(document.getElementById('deletePlayerModal'));
+        deleteModal.show();
+    }
+    function confirmDeleteScene(id, name) {
+        document.getElementById('deleteSceneName').textContent = name;
+        document.getElementById('deleteSceneForm').action = '/scenes/' + id + '/delete';
+        var deleteModal = new bootstrap.Modal(document.getElementById('deleteSceneModal'));
+        deleteModal.show();
+    }
+</script>
+{% endblock %}

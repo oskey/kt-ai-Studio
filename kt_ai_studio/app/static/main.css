@@ -1,0 +1,174 @@
+/* Modern App-like UI Variables */
+:root {
+    --app-bg: #f5f7fa;
+    --app-card-bg: #ffffff;
+    --app-text-primary: #1a1f36;
+    --app-text-secondary: #697386;
+    --app-border-radius: 16px;
+    --app-primary: #6366f1; /* Indigo-like */
+    --app-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --app-shadow-hover: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: var(--app-bg);
+    color: var(--app-text-primary);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Navbar Customization */
+.navbar-app {
+    background-color: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.navbar-brand {
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--app-primary) !important;
+}
+
+.nav-link {
+    color: var(--app-text-secondary) !important;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+
+.nav-link:hover, .nav-link.active {
+    color: var(--app-primary) !important;
+}
+
+/* Modern Card Style */
+.card {
+    border: none;
+    border-radius: var(--app-border-radius);
+    background-color: var(--app-card-bg);
+    box-shadow: var(--app-shadow-sm);
+    transition: all 0.2s ease;
+}
+
+/* App List Item (The core of the new look) */
+.app-list-item {
+    display: flex;
+    align-items: center;
+    background: var(--app-card-bg);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: var(--app-shadow-sm);
+    border: 1px solid transparent;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 100%; /* Ensure full width */
+}
+
+.app-list-item:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--app-shadow-hover);
+    border-color: rgba(99, 102, 241, 0.1);
+}
+
+/* Ensure flex container handles shrinking correctly */
+.app-list-item > .flex-grow-1 {
+    flex: 1 1 auto;
+    min-width: 0; /* Crucial for text-truncate to work in flex item */
+    margin-right: 16px; /* Spacing between content and actions */
+}
+
+.app-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.app-avatar.project {
+    background-color: #e0e7ff;
+    color: #4338ca;
+}
+
+.app-avatar.male {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.app-avatar.female {
+    background-color: #fce7f3;
+    color: #9d174d;
+}
+
+/* Form Controls */
+.form-control, .form-select {
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    padding: 0.6rem 1rem;
+    font-size: 0.95rem;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: var(--app-primary);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+/* Buttons */
+.btn {
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    transition: all 0.2s;
+}
+
+.btn-icon {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    color: var(--app-text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+}
+
+.btn-icon:hover {
+    background-color: #f1f5f9;
+    color: var(--app-text-primary);
+}
+
+.btn-icon.danger:hover {
+    background-color: #fee2e2;
+    color: #dc2626;
+}
+
+.btn-primary {
+    background-color: var(--app-primary);
+    border-color: var(--app-primary);
+}
+
+.btn-primary:hover {
+    background-color: #4f46e5;
+    border-color: #4f46e5;
+}
+
+/* Custom Utilities */
+.text-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--app-text-secondary);
+    font-weight: 600;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+}

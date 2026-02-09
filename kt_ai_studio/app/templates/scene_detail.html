@@ -1,0 +1,716 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid px-4">
+    <!-- Breadcrumb & Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0 small">
+                <li class="breadcrumb-item"><a href="/projects" class="text-decoration-none text-secondary">项目列表</a></li>
+                <li class="breadcrumb-item"><a href="/projects/{{ scene.project_id }}" class="text-decoration-none text-secondary">项目详情</a></li>
+                <li class="breadcrumb-item active fw-medium text-dark">{{ scene.name }}</li>
+            </ol>
+        </nav>
+        
+        <div class="d-flex align-items-center gap-2">
+            <span class="text-secondary small">状态:</span>
+            {% if scene.status == 'generated' %}
+            <span class="badge bg-success-subtle text-success rounded-pill">完成</span>
+            {% elif scene.status == 'draft' %}
+            <span class="badge bg-secondary-subtle text-secondary rounded-pill">草稿</span>
+            {% elif scene.status == 'generated_prompt' %}
+            <span class="badge bg-info-subtle text-info-emphasis rounded-pill">已生成 Prompt</span>
+            {% else %}
+            <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill">{{ scene.status }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Left Column: Settings & Actions -->
+        <div class="col-lg-4">
+            <!-- Scene Info Card -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="app-avatar me-3 bg-indigo-subtle text-indigo" style="width: 40px; height: 40px;">
+                            <i class="bi bi-image"></i>
+                        </div>
+                        <div>
+                            <h6 class="fw-bold mb-0">{{ scene.name }}</h6>
+                            <small class="text-secondary">{{ scene.scene_type }}</small>
+                        </div>
+                    </div>
+                    <div class="p-3 bg-light rounded-3 small text-secondary">
+                        {{ scene.base_desc }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Prompts Card -->
+            <div class="card mb-3">
+                <div class="card-header bg-white border-bottom-0 pt-3 pb-0">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-chat-text me-2 text-primary"></i>提示词 & 指纹</h6>
+                </div>
+                <div class="card-body">
+                    <form action="/scenes/{{ scene.id }}/update_prompts" method="post">
+                        <div class="mb-3">
+                            <label class="text-label mb-1 text-primary">场景指纹 (scene_desc)</label>
+                            <textarea name="scene_desc" class="form-control form-control-sm bg-light border-0" rows="3">{{ scene.scene_desc or '' }}</textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="text-label mb-1 text-success">正向提示词 (prompt_pos)</label>
+                            <textarea name="prompt_pos" class="form-control form-control-sm bg-light border-0" rows="5">{{ scene.prompt_pos or '' }}</textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="text-label mb-1 text-danger">反向提示词 (prompt_neg)</label>
+                            <textarea name="prompt_neg" class="form-control form-control-sm bg-light border-0" rows="3">{{ scene.prompt_neg or '' }}</textarea>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary btn-sm rounded-pill flex-grow-1 fw-medium">
+                                <i class="bi bi-save me-1"></i>保存修改
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger rounded-pill" 
+                                    title="清空所有生成文件"
+                                    onclick="document.getElementById('clearFilesForm').submit();">
+                                <i class="bi bi-eraser"></i>
+                            </button>
+                        </div>
+                    </form>
+                    <form id="clearFilesForm" action="/scenes/{{ scene.id }}/clear_files" method="post" class="d-none" onsubmit="return confirm('警告：这将物理删除该场景生成的所有文件（图片/JSON），但保留提示词。确定清理吗？');"></form>
+                </div>
+            </div>
+
+            <!-- Actions Card -->
+            <div class="card mb-3">
+                <div class="card-header bg-white border-bottom-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-lightning-charge me-2 text-primary"></i>生成操作</h6>
+                </div>
+                <div class="card-body">
+                    <!-- One Click Button -->
+                    <div class="mb-4">
+                         <button type="button" class="btn btn-primary w-100 py-2 rounded-pill shadow-sm fw-bold" 
+                                 style="background: linear-gradient(45deg, #4e73df, #224abe);"
+                                 {% if is_generating %}disabled{% endif %}
+                                 onclick="showOneClickModal()">
+                             <i class="bi bi-rocket-takeoff me-2"></i>一键全流程生成
+                         </button>
+                         <div class="text-center mt-1"><small class="text-muted" style="font-size: 0.7rem;">自动执行: 清空 -> 提示词 -> 场景图</small></div>
+                    </div>
+
+                    <div class="d-grid gap-3">
+                        <!-- Step 1: Prompt -->
+                        <form action="/scenes/{{ scene.id }}/gen_prompt" method="post">
+                            <button type="submit" class="btn btn-outline-primary w-100 text-start d-flex align-items-center justify-content-between p-3 border-2 hover-shadow" 
+                                    style="border-radius: 12px; border-color: #cfe2ff; background-color: #f8f9fa;" 
+                                    {% if is_generating %}disabled{% endif %}>
+                                <div>
+                                    <div class="fw-bold text-primary mb-1"><span class="badge bg-primary me-2 rounded-pill">1</span>生成提示词 (LLM)</div>
+                                    <div class="small text-secondary">
+                                        基于基础描述扩写
+                                    </div>
+                                </div>
+                                <i class="bi bi-chat-dots fs-4 text-primary opacity-50"></i>
+                            </button>
+                        </form>
+
+                        <!-- Step 2: Base Image -->
+                        <form action="/scenes/{{ scene.id }}/gen_base" method="post">
+                            <div class="p-3 rounded-3 border-2 border-success-subtle position-relative" style="background-color: #f1f8f5; border: 1px solid #d1e7dd;">
+                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <div class="fw-bold text-success"><span class="badge bg-success me-2 rounded-pill">2</span>生成场景图</div>
+                                </div>
+                                
+                                <div class="row g-2 mb-2">
+                                    <div class="col-6">
+                                        <label class="text-label x-small text-success">宽</label>
+                                        <input type="number" name="width" value="1024" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="text-label x-small text-success">高</label>
+                                        <input type="number" name="height" value="768" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="text-label x-small text-success">Seed (0=随机)</label>
+                                    <input type="number" name="seed" value="264590" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
+                                </div>
+                                <button type="submit" class="btn btn-success w-100 btn-sm rounded-pill fw-medium" 
+                                        {% if not scene.prompt_pos or is_generating %}disabled{% endif %}>
+                                    <i class="bi bi-play-fill me-1"></i>开始生成
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Task History -->
+            <div class="card">
+                <div class="card-header bg-white border-bottom-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-clock-history me-2 text-primary"></i>最近任务</h6>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-light btn-icon" type="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-3">
+                             <li>
+                                <button type="button" class="dropdown-item py-2 text-danger" onclick="forceInterrupt()">
+                                    <i class="bi bi-stop-circle me-2"></i>强制中断所有任务
+                                </button>
+                            </li>
+                            <li>
+                                <button type="button" class="dropdown-item py-2 text-warning" onclick="showForceResetModal()">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>强制重置任务状态 (SQL)
+                                </button>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <form action="/tasks/clear_logs_scene" method="post" class="d-inline">
+                                    <input type="hidden" name="scene_id" value="{{ scene.id }}">
+                                    <button type="submit" class="dropdown-item py-2">
+                                        <i class="bi bi-trash me-2"></i>清理已完成/失败记录
+                                    </button>
+                                </form>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <ul class="list-group list-group-flush" id="taskList">
+                        {% for task in tasks[:5] %}
+                        <li class="list-group-item border-0 border-bottom px-3 py-3" id="task-{{ task.id }}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="fw-medium text-dark" style="font-size: 0.9rem;">
+                                        {% if task.task_type == 'GEN_SCENE_PROMPT' %}生成提示词
+                                        {% elif task.task_type == 'GEN_SCENE_BASE' %}生成场景图
+                                        {% else %}{{ task.task_type }}{% endif %}
+                                    </div>
+                                    {% if task.error %}
+                                    <div class="text-danger small mt-1 task-error">{{ task.error|truncate(30) }}</div>
+                                    {% else %}
+                                    <div class="text-muted small mt-1">
+                                        <span class="task-time">{{ task._started_at_display or task.created_at.strftime('%H:%M:%S') }}</span>
+                                        {% if task.status == 'running' %}
+                                        <span class="ms-1 badge bg-primary-subtle text-primary rounded-pill task-progress">{{ task.progress }}%</span>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div>
+                                    {% if task.status == 'done' %}
+                                    <span class="badge bg-success-subtle text-success rounded-pill task-status">完成</span>
+                                    {% elif task.status == 'failed' %}
+                                    <span class="badge bg-danger-subtle text-danger rounded-pill task-status">失败</span>
+                                    {% elif task.status == 'running' %}
+                                    <span class="badge bg-primary-subtle text-primary rounded-pill task-status">
+                                        <span class="spinner-border spinner-border-sm me-1" style="width: 0.7rem; height: 0.7rem;"></span>运行中
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary-subtle text-secondary rounded-pill task-status">{{ task.status }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Results -->
+        <div class="col-lg-8">
+            <!-- Base Image -->
+            <div class="card mb-4">
+                <div class="card-header bg-white border-bottom-0 pt-3 pb-0">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-image me-2 text-primary"></i>场景图 (Base Image)</h6>
+                </div>
+                <div class="card-body">
+                    <div class="bg-light rounded-4 overflow-hidden d-flex align-items-center justify-content-center" style="min-height: 400px; border: 2px dashed #e2e8f0;">
+                        {% if scene.base_image_path %}
+                        <img src="/{{ scene.base_image_path }}?v={{ request.query_params.get('t', 0) }}" class="img-fluid" style="max-height: 600px;">
+                        {% else %}
+                        <div class="text-center text-muted">
+                            <i class="bi bi-image display-4 mb-2 d-block opacity-25"></i>
+                            <span class="small">暂无场景图</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- One Click Modal -->
+<div class="modal fade" id="oneClickModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom-0 pb-0">
+        <h5 class="modal-title fw-bold text-primary"><i class="bi bi-rocket-takeoff-fill me-2"></i>一键全流程生成</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="one-click-close-btn"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <div id="one-click-confirm-ui">
+            <p class="mb-3">即将开始自动执行全流程任务：</p>
+            <div class="d-flex flex-column gap-2 mb-3">
+                 <div class="d-flex align-items-center text-secondary"><i class="bi bi-trash me-2"></i>1. 清空当前所有配置和图片</div>
+                 <div class="d-flex align-items-center text-primary"><i class="bi bi-chat-dots me-2"></i>2. 生成提示词 (LLM)</div>
+                 <div class="d-flex align-items-center text-success"><i class="bi bi-image me-2"></i>3. 生成场景图</div>
+            </div>
+            <div class="alert alert-warning bg-warning-subtle border-0 small">
+                <i class="bi bi-info-circle me-1"></i> 任务将按顺序执行，如果某一步失败，流程将自动中断。
+            </div>
+        </div>
+        
+        <div id="one-click-running-ui" style="display:none;">
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+                <h6 class="fw-bold" id="one-click-step-text">正在初始化...</h6>
+                <p class="text-muted small">全流程自动执行中</p>
+                <button class="btn btn-outline-danger btn-sm rounded-pill mt-3" onclick="interruptOneClickFlow()">
+                    <i class="bi bi-stop-circle me-1"></i>停止执行
+                </button>
+            </div>
+        </div>
+
+        <div id="one-click-error-ui" style="display:none;">
+            <div class="alert alert-danger border-0">
+                <div class="d-flex">
+                    <i class="bi bi-x-circle-fill me-2 fs-4"></i>
+                    <div>
+                        <h6 class="fw-bold mb-1">执行中断</h6>
+                        <div id="one-click-error-msg" class="small"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="one-click-success-ui" style="display:none;">
+            <div class="text-center py-4 text-success">
+                <i class="bi bi-check-circle-fill display-4 mb-3"></i>
+                <h6 class="fw-bold">全流程生成完成！</h6>
+                <p class="text-muted small">您可以现在查看生成的结果了。</p>
+            </div>
+        </div>
+      </div>
+      <div class="modal-footer border-top-0 pt-0">
+        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal" id="one-click-cancel-btn">取消</button>
+        <button type="button" class="btn btn-primary rounded-pill px-4" onclick="startOneClickFlow()" id="one-click-start-btn">开始执行</button>
+        <button type="button" class="btn btn-primary rounded-pill px-4" data-bs-dismiss="modal" id="one-click-finish-btn" style="display:none;">完成</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Force Interrupt Modal -->
+<div class="modal fade" id="forceInterruptModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom-0 pb-0">
+        <h5 class="modal-title fw-bold text-danger"><i class="bi bi-stop-circle-fill me-2"></i>中断确认</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <div class="alert alert-warning bg-warning-subtle border-warning-subtle text-dark">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i><strong>注意</strong>
+        </div>
+        <p class="mb-2">确定要强制中断所有任务吗？</p>
+        <p class="small text-secondary mb-0">ComfyUI 中正在运行的任务也将被立即停止。</p>
+      </div>
+      <div class="modal-footer border-top-0 pt-0">
+        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-danger rounded-pill px-4" onclick="confirmForceInterrupt()">
+            <span id="force-interrupt-btn-text">确认中断</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Force Reset Modal -->
+<div class="modal fade" id="forceResetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom-0 pb-0">
+        <h5 class="modal-title fw-bold text-danger"><i class="bi bi-radioactive me-2"></i>强制重置警告</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <div class="alert alert-danger bg-danger-subtle border-danger-subtle text-danger">
+            <i class="bi bi-exclamation-octagon-fill me-2"></i><strong>高风险操作</strong>
+        </div>
+        <p class="mb-2">您正在尝试强制重置任务列表。此操作将：</p>
+        <ul class="text-secondary small mb-3">
+            <li>清空当前页面的任务列表</li>
+            <li>无论任务处于排队、运行还是完成状态，都会被清除</li>
+        </ul>
+        <p class="mb-0 fw-bold text-dark">仅在任务卡死且无法通过常规手段停止时使用。</p>
+      </div>
+      <div class="modal-footer border-top-0 pt-0">
+        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-danger rounded-pill px-4" onclick="confirmForceReset()">
+            <span id="force-reset-btn-text">确认重置</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="running-tasks-data" 
+     data-task-ids="{% for task in tasks if task.status in ['running', 'queued'] %}{{ task.id }}{% if not loop.last %},{% endif %}{% endfor %}"
+     style="display:none;"></div>
+
+<script>
+let oneClickModal, forceResetModal, forceInterruptModal;
+
+document.addEventListener('DOMContentLoaded', () => {
+    checkTaskStatus();
+    oneClickModal = new bootstrap.Modal(document.getElementById('oneClickModal'));
+    forceResetModal = new bootstrap.Modal(document.getElementById('forceResetModal'));
+    forceInterruptModal = new bootstrap.Modal(document.getElementById('forceInterruptModal'));
+});
+
+function showOneClickModal() {
+    oneClickModal.show();
+}
+
+function showForceResetModal() {
+    forceResetModal.show();
+}
+
+function forceInterrupt() {
+    forceInterruptModal.show();
+}
+
+async function confirmForceInterrupt() {
+    const btnText = document.getElementById('force-interrupt-btn-text');
+    const originalText = btnText.innerText;
+    btnText.innerText = "中断中...";
+    const btn = document.querySelector('#forceInterruptModal .btn-danger');
+    btn.disabled = true;
+
+    try {
+        const formData = new FormData();
+        // No task_id means global interrupt
+        await fetch('/tasks/interrupt', { method: 'POST', body: formData });
+        forceInterruptModal.hide();
+        showToast('中断指令已发送', 'success');
+        setTimeout(() => window.location.reload(), 1500);
+    } catch(e) {
+        showToast('中断请求失败', 'error');
+    } finally {
+        btnText.innerText = originalText;
+        btn.disabled = false;
+    }
+}
+
+async function confirmForceReset() {
+    const btnText = document.getElementById('force-reset-btn-text');
+    const originalText = btnText.innerText;
+    btnText.innerText = "处理中...";
+    const btn = document.querySelector('#forceResetModal .btn-danger');
+    btn.disabled = true;
+
+    try {
+        const formData = new FormData();
+        formData.append('scene_id', "{{ scene.id }}");
+        
+        const response = await fetch('/tasks/force_reset_scene', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            forceResetModal.hide();
+            showToast("重置成功！页面即将刷新。", "success");
+            setTimeout(() => window.location.reload(), 1500);
+        } else {
+            const data = await response.json();
+            showToast(`重置失败: ${data.detail || '未知错误'}`, "error");
+        }
+    } catch (e) {
+        console.error(e);
+        showToast("网络请求失败，请检查控制台日志。", "error");
+    } finally {
+        btnText.innerText = originalText;
+        btn.disabled = false;
+    }
+}
+
+// One Click Flow State
+let isOneClickRunning = false;
+let currentRunningTaskId = null;
+
+async function startOneClickFlow() {
+    if (isOneClickRunning) return;
+    isOneClickRunning = true;
+    currentRunningTaskId = null;
+    
+    // UI Setup
+    const confirmUI = document.getElementById('one-click-confirm-ui');
+    const runningUI = document.getElementById('one-click-running-ui');
+    const errorUI = document.getElementById('one-click-error-ui');
+    const successUI = document.getElementById('one-click-success-ui');
+    const stepText = document.getElementById('one-click-step-text');
+    const errorMsg = document.getElementById('one-click-error-msg');
+    
+    const startBtn = document.getElementById('one-click-start-btn');
+    const cancelBtn = document.getElementById('one-click-cancel-btn');
+    const closeBtn = document.getElementById('one-click-close-btn');
+    const finishBtn = document.getElementById('one-click-finish-btn');
+
+    confirmUI.style.display = 'none';
+    runningUI.style.display = 'block';
+    errorUI.style.display = 'none';
+    successUI.style.display = 'none';
+    startBtn.style.display = 'none';
+    cancelBtn.style.display = 'none';
+    closeBtn.style.display = 'none';
+    
+    document.body.classList.remove('modal-open');
+    document.body.style.overflow = 'auto'; 
+    
+    try {
+        // Step 1: Clear Files
+        stepText.innerText = "正在清空旧配置与图片...";
+        const clearResp = await fetch(`/scenes/{{ scene.id }}/clear_files`, { method: 'POST' });
+        if (!clearResp.ok && !clearResp.redirected) throw new Error("清空配置失败");
+        await updatePageContent();
+        
+        // Step 2: Gen Prompt
+        stepText.innerText = "步骤 1/2: 正在生成提示词 (LLM)...";
+        currentRunningTaskId = await submitTask('GEN_SCENE_PROMPT');
+        if (!currentRunningTaskId) throw new Error("提交提示词任务失败");
+        
+        const promptSuccess = await waitForTask(currentRunningTaskId);
+        if (!promptSuccess) throw new Error("提示词生成失败或被中断");
+        await updatePageContent();
+        
+        // Step 3: Gen Base
+        stepText.innerText = "步骤 2/2: 正在生成场景图...";
+        currentRunningTaskId = await submitTask('GEN_SCENE_BASE');
+        if (!currentRunningTaskId) throw new Error("提交场景图任务失败");
+        
+        const baseSuccess = await waitForTask(currentRunningTaskId);
+        if (!baseSuccess) throw new Error("场景图生成失败或被中断");
+        
+        // Success
+        runningUI.style.display = 'none';
+        successUI.style.display = 'block';
+        finishBtn.style.display = 'inline-block';
+        closeBtn.style.display = 'inline-block';
+        
+    } catch (e) {
+        if (e.message.includes("中断")) {
+             errorMsg.innerText = "用户已手动停止任务。";
+        } else {
+             console.error(e);
+             errorMsg.innerText = e.message;
+        }
+        runningUI.style.display = 'none';
+        errorUI.style.display = 'block';
+        finishBtn.innerText = "关闭";
+        finishBtn.style.display = 'inline-block';
+        finishBtn.className = "btn btn-secondary rounded-pill px-4";
+        closeBtn.style.display = 'inline-block';
+    } finally {
+        isOneClickRunning = false;
+        currentRunningTaskId = null;
+        await updatePageContent();
+    }
+}
+
+async function interruptOneClickFlow() {
+    if (!isOneClickRunning) return;
+    if (confirm("确定要停止当前任务吗？")) {
+        try {
+            await fetch(`/tasks/interrupt`, { method: 'POST' });
+        } catch(e) { console.error("Interrupt failed", e); }
+    }
+}
+
+// Helper: Submit Task (Generic)
+async function submitTask(taskType) {
+    const formData = new FormData();
+    // For Scene tasks, we don't send form data usually, just POST to endpoint
+    // But wait, the endpoints are separate: /scenes/{id}/gen_prompt and /scenes/{id}/gen_base
+    // We need to fetch those specific endpoints instead of generic /tasks/create
+    
+    let url = "";
+    if (taskType === 'GEN_SCENE_PROMPT') {
+        url = `/scenes/{{ scene.id }}/gen_prompt`;
+    } else if (taskType === 'GEN_SCENE_BASE') {
+        url = `/scenes/{{ scene.id }}/gen_base`;
+        // Add default params
+        formData.append('width', document.querySelector('input[name="width"]').value);
+        formData.append('height', document.querySelector('input[name="height"]').value);
+        formData.append('seed', document.querySelector('input[name="seed"]').value);
+    }
+    
+    const response = await fetch(url, { method: 'POST', body: formData });
+    if (response.ok) {
+        // Wait a bit for DB to update
+        await new Promise(r => setTimeout(r, 1000));
+        return await findLatestTask(taskType);
+    }
+    return null;
+}
+
+async function findLatestTask(taskType) {
+    await updatePageContent();
+    const listItems = document.querySelectorAll('.list-group-item');
+    if (listItems.length > 0) {
+        const firstItem = listItems[0];
+        const id = firstItem.id.replace('task-', '');
+        const typeText = firstItem.querySelector('.fw-medium').innerText;
+        
+        let typeMatch = false;
+        if (taskType === 'GEN_SCENE_PROMPT' && typeText.includes('生成提示词')) typeMatch = true;
+        if (taskType === 'GEN_SCENE_BASE' && typeText.includes('生成场景图')) typeMatch = true;
+        
+        if (typeMatch) return id;
+    }
+    return null;
+}
+
+async function waitForTask(taskId) {
+    return new Promise((resolve) => {
+        const check = setInterval(async () => {
+             const url = `/api/tasks/status?task_ids=${taskId}&_t=${new Date().getTime()}`;
+             try {
+                 const res = await fetch(url);
+                 const data = await res.json();
+                 const task = data[taskId];
+                 if (task) {
+                     if (task.status === 'done') {
+                         clearInterval(check);
+                         resolve(true);
+                     } else if (task.status === 'failed') {
+                         clearInterval(check);
+                         resolve(false);
+                     }
+                 }
+             } catch(e) {}
+        }, 2000);
+    });
+}
+
+// Extract polling logic to be callable
+const taskStatusCache = {};
+
+function checkTaskStatus() {
+    const dataElement = document.getElementById('running-tasks-data');
+    if (!dataElement) return;
+    
+    let runningTaskIds = [];
+    try {
+        const rawData = dataElement.getAttribute('data-task-ids');
+        if (rawData && rawData.trim() !== '') {
+            runningTaskIds = rawData.split(',').filter(id => id.trim() !== "");
+        }
+    } catch (e) {
+        runningTaskIds = [];
+    }
+
+    if (runningTaskIds.length > 0) {
+        const statusBadge = document.querySelector('.d-flex.align-items-center.gap-2');
+        if (statusBadge && !statusBadge.querySelector('.spinner-grow')) {
+            const indicator = document.createElement('span');
+            indicator.className = 'badge bg-light text-primary border ms-2';
+            indicator.innerHTML = '<span class="spinner-grow spinner-grow-sm me-1" style="width: 0.5rem; height: 0.5rem;"></span>同步中...';
+            statusBadge.appendChild(indicator);
+        }
+        
+        const url = `/api/tasks/status?task_ids=${runningTaskIds.join(',')}&_t=${new Date().getTime()}`;
+        
+        fetch(url)
+            .then(res => res.json())
+            .then(data => {
+                let shouldRefresh = false;
+                for (const taskId of runningTaskIds) {
+                    const taskData = data[taskId];
+                    if (!taskData) continue;
+                    
+                    const status = taskData.status;
+                    const prevStatus = taskStatusCache[taskId];
+                    
+                    if (status && (!prevStatus || status !== prevStatus)) {
+                        shouldRefresh = true;
+                    }
+                    
+                    // Update Progress Bar & Info directly
+                    const taskItem = document.getElementById(`task-${taskId}`);
+                    if (taskItem) {
+                        const progressBar = taskItem.querySelector('.progress-bar');
+                        if (progressBar) progressBar.style.width = `${taskData.progress}%`;
+                        
+                        const badge = taskItem.querySelector('.badge');
+                        if (badge) {
+                            if (status === 'running') {
+                                badge.className = 'badge rounded-pill bg-primary-subtle text-primary border border-primary-subtle';
+                                badge.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>运行中';
+                            } else if (status === 'done') {
+                                badge.className = 'badge rounded-pill bg-success-subtle text-success border border-success-subtle';
+                                badge.innerText = '完成';
+                            } else if (status === 'failed') {
+                                badge.className = 'badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle';
+                                badge.innerText = '失败';
+                            }
+                        }
+                    }
+                    taskStatusCache[taskId] = status;
+                }
+                
+                if (shouldRefresh) {
+                    updatePageContent();
+                }
+            })
+            .catch(e => console.error(e));
+    }
+}
+
+async function updatePageContent() {
+    try {
+        const response = await fetch(window.location.href + '?t=' + new Date().getTime());
+        const html = await response.text();
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+
+        const newTaskHistory = doc.querySelector('.card .list-group');
+        const currentTaskHistory = document.querySelector('.card .list-group');
+        if (newTaskHistory && currentTaskHistory) currentTaskHistory.innerHTML = newTaskHistory.innerHTML;
+
+        const newPromptForm = doc.querySelector('form[action*="update_prompts"]');
+        const currentPromptForm = document.querySelector('form[action*="update_prompts"]');
+        if (newPromptForm && currentPromptForm) currentPromptForm.innerHTML = newPromptForm.innerHTML;
+
+        const newImagesArea = doc.querySelector('.col-lg-8');
+        const currentImagesArea = document.querySelector('.col-lg-8');
+        if (newImagesArea && currentImagesArea) currentImagesArea.innerHTML = newImagesArea.innerHTML;
+        
+        const newStatus = doc.querySelector('.d-flex.align-items-center.gap-2');
+        const currentStatus = document.querySelector('.d-flex.align-items-center.gap-2');
+        if (newStatus && currentStatus) currentStatus.innerHTML = newStatus.innerHTML;
+
+        const newRunningData = doc.getElementById('running-tasks-data');
+        const currentRunningData = document.getElementById('running-tasks-data');
+        if (newRunningData && currentRunningData) {
+            currentRunningData.setAttribute('data-task-ids', newRunningData.getAttribute('data-task-ids'));
+            checkTaskStatus(); 
+        }
+        
+        const hasRunningTasks = newRunningData.getAttribute('data-task-ids').trim().length > 0;
+        if (!hasRunningTasks) {
+             document.querySelectorAll('input, button').forEach(el => el.disabled = false);
+        }
+
+    } catch (err) {
+        console.error("Failed to update page content:", err);
+    }
+}
+
+setInterval(checkTaskStatus, 2000);
+</script>
+{% endblock %}
