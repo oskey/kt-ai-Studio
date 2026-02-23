@@ -196,7 +196,7 @@ python -m app.main
 
 ---
 
-## �📦 使用到的模型说明（非常重要）
+## 📦 使用到的模型说明（非常重要）
 
 ### 🟣 Qwen 系列模型
 
@@ -206,6 +206,7 @@ Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors
 Qwen-Edit-2509-Multiple-angles.safetensors
 qwen_2.5_vl_7b_fp8_scaled.safetensors
 qwen_image_vae.safetensors
+```
 
 ### 🔵 Wan 2.2 系列模型
 
@@ -216,3 +217,4 @@ wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors
 wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors
 wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors
 wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors
+```
