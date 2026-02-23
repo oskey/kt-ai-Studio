@@ -83,6 +83,36 @@ class Scene(Base):
     
     # Many-to-Many relationship with Players
     related_players = relationship("Player", secondary="kt_ai_scene_player_link", back_populates="related_scenes")
+    
+    # Video
+    videos = relationship("Video", back_populates="scene", cascade="all, delete-orphan")
+
+class Video(Base):
+    __tablename__ = "kt_ai_video"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("kt_ai_project.id"), nullable=False)
+    scene_id = Column(Integer, ForeignKey("kt_ai_scene.id"), nullable=False)
+    
+    status = Column(String, default="draft") # draft/queued/generating/completed/failed
+    
+    prompt_pos = Column(Text, nullable=True) # LLM generated positive prompt for video
+    prompt_neg = Column(Text, nullable=True) # LLM generated negative prompt for video
+    
+    video_path = Column(Text, nullable=True) # Path to generated video file
+    
+    # Generation Parameters
+    seed = Column(Integer, default=0)
+    width = Column(Integer, default=640)
+    height = Column(Integer, default=640)
+    length = Column(Integer, default=81)
+    fps = Column(Integer, default=16)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    scene = relationship("Scene", back_populates="videos")
+    project = relationship("Project")
 
 class SystemConfig(Base):
     __tablename__ = "kt_ai_system_config"
@@ -140,7 +170,8 @@ class Task(Base):
     project_id = Column(Integer, ForeignKey("kt_ai_project.id"), nullable=False)
     player_id = Column(Integer, ForeignKey("kt_ai_player.id"), nullable=True)
     scene_id = Column(Integer, ForeignKey("kt_ai_scene.id"), nullable=True)
-    task_type = Column(String, nullable=False) # GEN_PROMPT | GEN_BASE | GEN_8VIEWS | GEN_SCENE_PROMPT | GEN_SCENE_BASE
+    video_id = Column(Integer, ForeignKey("kt_ai_video.id"), nullable=True)
+    task_type = Column(String, nullable=False) # GEN_PROMPT | GEN_BASE | GEN_8VIEWS | GEN_SCENE_PROMPT | GEN_SCENE_BASE | GEN_VIDEO_PROMPT | GEN_VIDEO
     status = Column(String, default="queued") # queued/running/done/failed
     progress = Column(Integer, default=0)
     payload_json = Column(Text, nullable=True)
@@ -156,3 +187,4 @@ class Task(Base):
     project = relationship("Project", back_populates="tasks")
     player = relationship("Player", back_populates="tasks")
     scene = relationship("Scene", back_populates="tasks")
+    video = relationship("Video")

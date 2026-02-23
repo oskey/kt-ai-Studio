@@ -185,12 +185,70 @@ def delete_scene(db: Session, scene_id: int):
         return True
     return False
 
+# Video CRUD
+def create_video(db: Session, project_id: int, scene_id: int):
+    # Check if exists
+    db_video = db.query(models.Video).filter(models.Video.scene_id == scene_id).first()
+    if db_video:
+        return db_video
+        
+    db_video = models.Video(
+        project_id=project_id,
+        scene_id=scene_id,
+        status="draft"
+    )
+    db.add(db_video)
+    db.commit()
+    db.refresh(db_video)
+    return db_video
+
+def get_video(db: Session, video_id: int):
+    return db.query(models.Video).filter(models.Video.id == video_id).first()
+
+def get_video_by_scene(db: Session, scene_id: int):
+    return db.query(models.Video).filter(models.Video.scene_id == scene_id).first()
+
+def get_videos_by_project(db: Session, project_id: int):
+    return db.query(models.Video).filter(models.Video.project_id == project_id).all()
+
+def update_video_prompts(db: Session, video_id: int, prompt_pos: str, prompt_neg: str):
+    db_video = get_video(db, video_id)
+    if db_video:
+        db_video.prompt_pos = prompt_pos
+        db_video.prompt_neg = prompt_neg
+        db.commit()
+        db.refresh(db_video)
+    return db_video
+
+def update_video_status(db: Session, video_id: int, status: str, video_path: Optional[str] = None):
+    db_video = get_video(db, video_id)
+    if db_video:
+        db_video.status = status
+        if video_path:
+            db_video.video_path = video_path
+        db.commit()
+        db.refresh(db_video)
+    return db_video
+
+def update_video_params(db: Session, video_id: int, seed: int, width: int, height: int, length: int, fps: int):
+    db_video = get_video(db, video_id)
+    if db_video:
+        db_video.seed = seed
+        db_video.width = width
+        db_video.height = height
+        db_video.length = length
+        db_video.fps = fps
+        db.commit()
+        db.refresh(db_video)
+    return db_video
+
 # Task CRUD
-def create_task(db: Session, project_id: int, task_type: str, player_id: Optional[int] = None, scene_id: Optional[int] = None, payload: Optional[dict] = None):
+def create_task(db: Session, project_id: int, task_type: str, player_id: Optional[int] = None, scene_id: Optional[int] = None, video_id: Optional[int] = None, payload: Optional[dict] = None):
     db_task = models.Task(
         project_id=project_id,
         player_id=player_id,
         scene_id=scene_id,
+        video_id=video_id,
         task_type=task_type,
         status="queued",
         payload_json=json.dumps(payload) if payload else None

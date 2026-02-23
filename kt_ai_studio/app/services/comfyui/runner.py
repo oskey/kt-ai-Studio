@@ -640,7 +640,8 @@ class ComfyRunner:
         set_input("115:3", "seed", seed)
         
         # Node 60: Save Image (Filename Prefix)
-        set_input("60", "filename_prefix", f"scenemerge_{task.id}")
+        filename_prefix = f"scenemerge_{task.id}"
+        set_input("60", "filename_prefix", filename_prefix)
         
         # --- Debug Logging for ComfyUI API ---
         print("\n" + "="*60)
@@ -657,6 +658,9 @@ class ComfyRunner:
         print(f"  -> prompt_pos (115:111): {prompt_pos}")
         print(f"  -> prompt_neg (115:110): {prompt_neg}")
         print(f"  -> seed (115:3): {seed}")
+        print("-" * 30)
+        print(" [Node 60] SaveImage (Filename Prefix)")
+        print(f"  -> filename_prefix: {filename_prefix}")
         print("="*60 + "\n")
         # -------------------------------------
         
@@ -674,15 +678,6 @@ class ComfyRunner:
         
         # Download
         # Target: output/<project_code>/scenes/<scene_id>_<scene_name>/merge/
-        # However, run_scene_merge is called iteratively.
-        # We need to save separate files for each step or just overwrite?
-        # User requirement: "step_01_{player_id}.png"
-        # We should use a unique filename or folder.
-        
-        # Let's use timestamp or step index if we can pass it.
-        # But here we just save to "merge" folder and let ComfyUI/Client handle filenames.
-        # ComfyUI usually saves as ComfyUI_00001_.png etc.
-        
         scene = task.scene
         project_code = task.project.project_code
         # Sanitize scene name for folder
@@ -696,35 +691,196 @@ class ComfyRunner:
         print(f"Downloading outputs to {save_dir}...")
         results = self.client.download_outputs(history, save_dir)
         
-        # Cleanup temporary files
-        try:
-            for filename in os.listdir(save_dir):
-                if filename.startswith("ComfyUI_temp_") and filename.endswith(".png"):
-                    file_path = os.path.join(save_dir, filename)
-                    try:
-                        os.remove(file_path)
-                        print(f"Deleted temp file: {filename}")
-                    except OSError as e:
-                        print(f"Error deleting temp file {filename}: {e}")
-        except Exception as e:
-            print(f"Error cleaning up temp files: {e}")
-        
         # Find result
-        if results:
-            # We expect image from SaveImage node.
-            # results structure: { node_id: [absolute_paths...] }
-            for node_id, paths in results.items():
-                if paths:
-                    # Return the first image found
-                    abs_path = paths[0]
-                    # Return relative path for DB
-                    # config.OUTPUT_DIR is X:\...\output
-                    # abs_path is X:\...\output\...\merge\ComfyUI_xxxxx.png
-                    # rel_path should be output/...\merge\ComfyUI_xxxxx.png
-                    
-                    # Use os.path.relpath based on config.OUTPUT_DIR parent
-                    base_dir = os.path.dirname(config.OUTPUT_DIR)
-                    rel_path = os.path.relpath(abs_path, base_dir).replace("\\", "/")
-                    return {"merge_image_path": rel_path}
+        if results and "60" in results:
+            # We expect image from SaveImage node 60.
+            paths = results["60"]
+            if paths:
+                # Return the first image found
+                abs_path = paths[0]
+                
+                # Check if it matches our prefix to avoid picking up random files
+                filename = os.path.basename(abs_path)
+                if not filename.startswith(filename_prefix):
+                    # Fallback search in directory if ComfyUI returned weird path
+                    # Or try to find the correct file
+                    candidates = [f for f in os.listdir(save_dir) if f.startswith(filename_prefix) and f.endswith(".png")]
+                    if candidates:
+                        # Pick latest
+                        candidates.sort(key=lambda x: os.path.getmtime(os.path.join(save_dir, x)), reverse=True)
+                        abs_path = os.path.join(save_dir, candidates[0])
+                
+                # Use os.path.relpath based on config.OUTPUT_DIR parent
+                base_dir = os.path.dirname(config.OUTPUT_DIR)
+                rel_path = os.path.relpath(abs_path, base_dir).replace("\\", "/")
+                return {"merge_image_path": rel_path}
             
-        raise Exception("No image output found for Scene Merge")
+        raise Exception("No image output found for Scene Merge from Node 60")
+
+    def run_gen_video(self, task: models.Task, callback=None, cancel_check_func=None):
+        """
+        Runs the GEN_VIDEO workflow (Wan2.2 Image-to-Video).
+        """
+        video = task.video
+        scene = video.scene
+        
+        workflow = self._load_workflow("video_wan2_2_14B_i2v.json")
+        
+        # Parse inputs
+        payload = {}
+        if task.payload_json:
+            try:
+                payload = json.loads(task.payload_json)
+            except:
+                pass
+                
+        # Parameters
+        width = payload.get("width", 640)
+        height = payload.get("height", 640)
+        length = payload.get("length", 81)
+        fps = payload.get("fps", 16)
+        seed = payload.get("seed", 0)
+        # Remove the random seed logic if seed is 0, because 0 is a valid seed? 
+        # Actually user wants to use the configured seed.
+        # But if the payload explicitly sends 0, does it mean "random" or "seed 0"?
+        # In other functions (gen_base), 0 means random.
+        # But here the user says: "why isn't it 264590 as configured in web page? It used a random value."
+        # This implies the web page sent 264590, but the backend ignored it or overwrote it?
+        # Or maybe the web page sent 0 (if user didn't change it and default was 0 before)?
+        # Wait, if the user configured 264590 in the UI, payload.get("seed") should be 264590.
+        # If payload.get("seed") is 264590, the condition `if seed == 0` is false, so it should use 264590.
+        # The log shows "Noise Seed -> noise_seed: 3667400612", which looks like a random int.
+        # This means `seed` was 0 when entering the condition.
+        # So payload.get("seed") returned 0.
+        # Why did the payload contain 0?
+        # Maybe the UI form didn't submit the updated value?
+        # Or the task payload wasn't constructed correctly?
+        # The task is created in videos.py: generate_video_route.
+        # It creates a Task. But does it put the video parameters into task.payload_json?
+        # Let's check videos.py.
+        
+        if seed == 0:
+            seed = random.randint(1, 9999999999)
+            
+        # Prompts (from DB or payload?)
+        # Task payload usually contains the prompts generated by LLM step
+        prompt_pos = payload.get("prompt_pos", video.prompt_pos or "")
+        prompt_neg = payload.get("prompt_neg", video.prompt_neg or "")
+        
+        # Input Image (Scene Merged Image)
+        if not scene.merged_image_path:
+            raise ValueError("Scene has no merged image for video generation")
+            
+        # Resolve absolute path
+        # scene.merged_image_path is relative like "output/project/..."
+        base_dir = os.path.dirname(config.OUTPUT_DIR)
+        input_image_abs_path = os.path.join(base_dir, scene.merged_image_path)
+        
+        if not os.path.exists(input_image_abs_path):
+            raise ValueError(f"Input image not found: {input_image_abs_path}")
+            
+        print(f"Uploading input image {input_image_abs_path}...")
+        resp = self.client.upload_image(input_image_abs_path)
+        uploaded_filename = resp["name"]
+        
+        def set_input(node_id, field, value):
+            if node_id in workflow:
+                if 'inputs' not in workflow[node_id]:
+                    workflow[node_id]['inputs'] = {}
+                workflow[node_id]['inputs'][field] = value
+            else:
+                print(f"Warning: Node {node_id} not found in workflow")
+                
+        # 1. Input Image (Node 97)
+        set_input("97", "image", uploaded_filename)
+        
+        # 2. Prompts
+        set_input("93", "text", prompt_pos)
+        set_input("89", "text", prompt_neg)
+        
+        # 3. Parameters (Node 98: WanImageToVideo)
+        set_input("98", "width", width)
+        set_input("98", "height", height)
+        set_input("98", "length", length)
+        
+        # 4. FPS (Node 94: CreateVideo) - wait, check JSON
+        # Node 94 inputs: fps, images
+        set_input("94", "fps", fps)
+        
+        # 5. Seed (Node 86: KSamplerAdvanced - Noise Seed)
+        set_input("86", "noise_seed", seed)
+        # Node 85 also has noise_seed, usually they should match or be controlled?
+        # User instructions: "86的 noise_seed，可以在页面配置后..."
+        # Just 86 mentioned. But usually sampler chain needs consistent seed or handled by Comfy.
+        # Let's set 85 too if it exists and has seed, just in case, or stick to 86 as requested.
+        # The provided JSON has 85 noise_seed=0 (fixed?) and 86 noise_seed=264590.
+        # I will set 86 as requested.
+        
+        # 6. Save Video (Node 108)
+        filename_prefix = f"video_{task.id}"
+        set_input("108", "filename_prefix", filename_prefix)
+        
+        # --- Debug Logging for ComfyUI API ---
+        print("\n" + "="*60)
+        print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
+        print(f" Workflow File: video_wan2_2_14B_i2v.json")
+        print("-" * 60)
+        print(" [Node 97] LoadImage")
+        print(f"  -> image: {uploaded_filename}")
+        print("-" * 30)
+        print(" [Node 93] Positive Prompt")
+        print(f"  -> text: {prompt_pos[:100]}...")
+        print("-" * 30)
+        print(" [Node 89] Negative Prompt")
+        print(f"  -> text: {prompt_neg[:100]}...")
+        print("-" * 30)
+        print(" [Node 98] WanImageToVideo Params")
+        print(f"  -> width: {width}, height: {height}, length: {length}")
+        print("-" * 30)
+        print(" [Node 94] FPS")
+        print(f"  -> fps: {fps}")
+        print("-" * 30)
+        print(" [Node 86] Noise Seed")
+        print(f"  -> noise_seed: {seed}")
+        print("-" * 30)
+        print(" [Node 108] Filename Prefix")
+        print(f"  -> filename_prefix: {filename_prefix}")
+        print("="*60 + "\n")
+        # -------------------------------------
+        
+        # Submit
+        print(f"Submitting GEN_VIDEO task {task.id}...")
+        response = self.client.queue_prompt(workflow)
+        prompt_id = response['prompt_id']
+        
+        # Wait
+        def internal_callback(event, data):
+            if callback:
+                callback(event, data)
+                
+        history = self.client.wait_for_completion(prompt_id, callback=internal_callback, cancel_check_func=cancel_check_func)
+        
+        # Download
+        # Target: output/<project_code>/scenes/<scene_id>_<scene_name>/video/
+        project_code = task.project.project_code
+        # Sanitize scene name
+        import re
+        safe_scene_name = re.sub(r'[\\/*?:"<>|]', "", scene.name)
+        scene_folder_name = f"{scene.id}_{safe_scene_name}"
+        
+        save_dir = os.path.join(config.OUTPUT_DIR, project_code, "scenes", scene_folder_name, "video")
+        os.makedirs(save_dir, exist_ok=True)
+        
+        print(f"Downloading outputs to {save_dir}...")
+        results = self.client.download_outputs(history, save_dir)
+        
+        # Find video output (Node 108)
+        if "108" in results and results["108"]:
+            abs_path = results["108"][0] # First video
+            
+            # Rel path
+            base_dir = os.path.dirname(config.OUTPUT_DIR)
+            rel_path = os.path.relpath(abs_path, base_dir).replace("\\", "/")
+            return {"video_path": rel_path}
+            
+        raise Exception("No video output found from Node 108")

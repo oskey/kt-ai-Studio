@@ -231,13 +231,36 @@
                         创建于 {{ project.created_at.strftime('%Y-%m-%d') }}
                     </div>
                     
-                    <div class="d-grid gap-2 mt-4">
-                        <button class="btn btn-outline-primary btn-sm rounded-pill" onclick="triggerBatchGenBase()">
-                            <i class="bi bi-stars me-1"></i>一键生成所有基图
-                        </button>
-                        <button class="btn btn-outline-success btn-sm rounded-pill" onclick="triggerBatchGenComplete()">
-                            <i class="bi bi-person-video2 me-1"></i>一键生成角色完整图
-                        </button>
+                    <div class="mt-4">
+                        <h6 class="text-label mb-2" style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">角色相关功能</h6>
+                        <div class="d-grid gap-2 border p-2 rounded">
+                            <button class="btn btn-outline-primary btn-sm rounded-pill" onclick="triggerBatchGenBase()">
+                                <i class="bi bi-stars me-1"></i>一键生成所有基图
+                            </button>
+                            <button class="btn btn-outline-success btn-sm rounded-pill" onclick="triggerBatchGenComplete()">
+                                <i class="bi bi-person-video2 me-1"></i>一键生成角色完整图
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <h6 class="text-label mb-2" style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">场景相关功能</h6>
+                        <div class="d-grid gap-2 border p-2 rounded">
+                            <button class="btn btn-outline-primary btn-sm rounded-pill" onclick="triggerBatchGenSceneBase()">
+                                <i class="bi bi-image me-1"></i>一键生成所有场景基图
+                            </button>
+                            <button class="btn btn-outline-success btn-sm rounded-pill" onclick="triggerBatchGenSceneMerge()">
+                                <i class="bi bi-layers-half me-1"></i>一键生成角色合并图
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm rounded-pill" onclick="triggerBatchGenVideo()">
+                                <i class="bi bi-film me-1"></i>一键生成所有视频
+                            </button>
+                        </div>
+                        <div class="d-grid gap-2 mt-2">
+                            <button class="btn btn-danger btn-sm rounded-pill" onclick="triggerBatchRegenerateAll()">
+                                <i class="bi bi-arrow-repeat me-1"></i>一键重新生成所有基础图片
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -255,6 +278,11 @@
                 <li class="nav-item" role="presentation">
                     <button class="nav-link rounded-pill px-4" id="pills-scenes-tab" data-bs-toggle="pill" data-bs-target="#pills-scenes" type="button" role="tab" aria-selected="false">
                         <i class="bi bi-image me-2"></i>场景列表
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link rounded-pill px-4" id="pills-videos-tab" data-bs-toggle="pill" data-bs-target="#pills-videos" type="button" role="tab" aria-selected="false">
+                        <i class="bi bi-film me-2"></i>视频列表
                     </button>
                 </li>
             </ul>
@@ -540,6 +568,105 @@
                                 </div>
                                 <h6 class="text-dark">暂无场景</h6>
                                 <p class="text-secondary small">添加一个场景开始生成吧</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <!-- Videos Tab -->
+                <div class="tab-pane fade" id="pills-videos" role="tabpanel">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0">视频列表</h5>
+                    </div>
+
+                    <div class="d-flex flex-column gap-2">
+                        {% if scenes %}
+                            {% for episode, scene_list in scenes|groupby('episode') %}
+                                {% set completed_scenes = [] %}
+                                {% for s in scene_list %}
+                                    {% if s.merged_image_path %}
+                                        {% set _ = completed_scenes.append(s) %}
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% if completed_scenes %}
+                                    <!-- Episode Group -->
+                                    <div class="card border border-light shadow-sm mb-2">
+                                        <div class="card-header bg-white border-0 py-3 d-flex align-items-center justify-content-between cursor-pointer" 
+                                             data-bs-toggle="collapse" 
+                                             data-bs-target="#video-episode-{{ episode }}" 
+                                             aria-expanded="false">
+                                            <div class="d-flex align-items-center">
+                                                <div class="bg-danger-subtle text-danger rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 36px; height: 36px;">
+                                                    <i class="bi bi-film"></i>
+                                                </div>
+                                                <div>
+                                                    <h6 class="fw-bold mb-0 text-dark">第 {{ episode }} 集</h6>
+                                                    <small class="text-secondary">{{ completed_scenes|length }} 个可生成镜头</small>
+                                                </div>
+                                            </div>
+                                            <i class="bi bi-chevron-down text-secondary"></i>
+                                        </div>
+                                        <div id="video-episode-{{ episode }}" class="collapse">
+                                            <div class="card-body pt-0 ps-5">
+                                                <div class="d-flex flex-column gap-2 border-start ps-3 border-2 border-light">
+                                                    {% for scene in completed_scenes|sort(attribute='shot') %}
+                                                    {% set video = scene.videos[0] if scene.videos else None %}
+                                                    <div class="app-list-item py-2 border-bottom-0 bg-light-subtle">
+                                                        <div class="flex-grow-1 min-width-0">
+                                                            <div class="d-flex align-items-center mb-1">
+                                                                <span class="badge bg-white text-dark border me-2 shadow-sm" style="min-width: 40px;">{{ scene.shot }}镜</span>
+                                                                <h6 class="mb-0 fw-bold text-dark me-2 text-truncate">{{ scene.name }}</h6>
+                                                                
+                                                                {% if video and video.status == 'completed' %}
+                                                                    <i class="bi bi-check-circle-fill text-success ms-2" title="视频已生成"></i>
+                                                                {% elif video %}
+                                                                    {% if video.status == 'queued' %}
+                                                                    <span class="badge bg-secondary-subtle text-secondary rounded-pill fw-normal ms-2" style="font-size: 0.7rem;">排队中</span>
+                                                                    {% elif video.status == 'running' or video.status == 'generating' %}
+                                                                    <span class="badge bg-primary-subtle text-primary rounded-pill fw-normal ms-2" style="font-size: 0.7rem;">运行中</span>
+                                                                    {% elif video.status == 'failed' %}
+                                                                    <span class="badge bg-danger-subtle text-danger rounded-pill fw-normal ms-2" style="font-size: 0.7rem;">失败</span>
+                                                                    {% elif video.status == 'draft' %}
+                                                                    <span class="badge bg-secondary-subtle text-secondary rounded-pill fw-normal ms-2" style="font-size: 0.7rem;">草稿</span>
+                                                                    {% else %}
+                                                                    <span class="badge bg-info-subtle text-info-emphasis rounded-pill fw-normal ms-2" style="font-size: 0.7rem;">{{ video.status }}</span>
+                                                                    {% endif %}
+                                                                {% endif %}
+                                                            </div>
+                                                            <div class="text-secondary small mb-1 text-truncate" style="max-width: 300px;">
+                                                                {{ scene.base_desc }}
+                                                            </div>
+                                                        </div>
+                                                        <!-- Actions -->
+                                                        <div class="d-flex align-items-center gap-2">
+                                                            {% if scene.merged_image_path %}
+                                                            <img src="{{ to_web_path(scene.merged_image_path) }}" class="list-thumbnail border-success" onclick="showPreview(this.src)" title="源图片" style="width: 36px; height: 36px; object-fit: cover;">
+                                                            {% endif %}
+                                                            
+                                                            {% if video and video.video_path %}
+                                                                <!-- Video Preview Icon/Link -->
+                                                                <a href="{{ to_web_path(video.video_path) }}" target="_blank" class="btn btn-sm btn-outline-success rounded-pill px-2" title="播放视频">
+                                                                    <i class="bi bi-play-fill"></i>
+                                                                </a>
+                                                            {% endif %}
+                                                            
+                                                            <a href="/videos/manage?scene_id={{ scene.id }}" class="btn btn-sm btn-outline-danger rounded-pill px-3" style="font-size: 0.75rem;">管理</a>
+                                                        </div>
+                                                    </div>
+                                                    {% endfor %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-center py-5">
+                                <div class="bg-white rounded-circle d-inline-flex align-items-center justify-content-center shadow-sm mb-3" style="width: 80px; height: 80px;">
+                                    <i class="bi bi-film text-secondary fs-2"></i>
+                                </div>
+                                <h6 class="text-dark">暂无就绪场景</h6>
+                                <p class="text-secondary small">请先在场景列表中完成角色合并</p>
                             </div>
                         {% endif %}
                     </div>
@@ -867,7 +994,7 @@
     // Generic Confirmation Helper
     function showConfirmation(title, message, callback) {
         document.getElementById('confirmModalTitle').textContent = title;
-        document.getElementById('confirmModalMessage').textContent = message;
+        document.getElementById('confirmModalMessage').innerHTML = message;
         
         const btn = document.getElementById('confirmModalBtn');
         // Remove previous listeners
@@ -1070,16 +1197,110 @@
         deleteModal.show();
     }
     
+    // --- Auto Refresh Logic ---
+    const currentProjectId = Number("{{ project.id }}"); 
+    let refreshInterval = null;
+    const REFRESH_DELAY = 10000; // 10 seconds
+
+    function startAutoRefresh() {
+        if (refreshInterval) return;
+        
+        // Show indicator
+        let indicator = document.getElementById('refreshIndicator');
+        if (!indicator) {
+            indicator = document.createElement('div');
+            indicator.id = 'refreshIndicator';
+            indicator.className = 'position-fixed top-0 end-0 m-3 badge bg-success shadow-sm p-2';
+            indicator.style.zIndex = '1050';
+            indicator.innerHTML = '<i class="bi bi-arrow-repeat spinner-border spinner-border-sm me-2"></i>自动任务进行中，页面将自动刷新...';
+            document.body.appendChild(indicator);
+        }
+
+        refreshInterval = setInterval(() => {
+            // Save scroll position
+            sessionStorage.setItem('scrollPos', window.scrollY);
+            
+            // Save expanded episodes
+            const expandedEpisodes = [];
+            document.querySelectorAll('.collapse.show').forEach(el => {
+                expandedEpisodes.push(el.id);
+            });
+            sessionStorage.setItem('expandedEpisodes', JSON.stringify(expandedEpisodes));
+            
+            // Reload
+            window.location.reload();
+        }, REFRESH_DELAY);
+    }
+
+    function stopAutoRefresh() {
+        if (refreshInterval) {
+            clearInterval(refreshInterval);
+            refreshInterval = null;
+        }
+        const indicator = document.getElementById('refreshIndicator');
+        if (indicator) indicator.remove();
+    }
+
+    // Check if tasks are running on load
+    document.addEventListener("DOMContentLoaded", function(){
+        // Restore scroll
+        const scrollPos = sessionStorage.getItem('scrollPos');
+        if (scrollPos) {
+            window.scrollTo(0, parseInt(scrollPos));
+            sessionStorage.removeItem('scrollPos');
+        }
+        
+        // Restore expanded episodes
+        const expandedEpisodesJson = sessionStorage.getItem('expandedEpisodes');
+        if (expandedEpisodesJson) {
+            try {
+                const ids = JSON.parse(expandedEpisodesJson);
+                ids.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        new bootstrap.Collapse(el, { toggle: false }).show();
+                    }
+                });
+            } catch(e) {}
+            sessionStorage.removeItem('expandedEpisodes');
+        }
+
+        // Check running tasks immediately
+        checkTaskStatusAndToggleRefresh();
+    });
+
+    async function checkTaskStatusAndToggleRefresh() {
+        try {
+            const res = await fetch('/api/tasks/active'); 
+            if (!res.ok) return;
+            
+            const tasks = await res.json();
+            
+            // Filter for tasks related to THIS project
+            const runningTasks = tasks.filter(t => t.project_id === currentProjectId);
+            
+            if (runningTasks.length > 0) {
+                startAutoRefresh();
+            } else {
+                stopAutoRefresh();
+            }
+        } catch(e) {
+            console.error("Failed to check tasks", e);
+        }
+    }
+    
+    // Trigger Functions to start refresh immediately
     async function triggerBatchGenBase() {
         showConfirmation(
             "一键生成所有基图",
             "确定要为所有草稿状态的角色生成基图吗？此操作将在后台运行，请通过系统日志查看进度。",
             async () => {
                 try {
-                    const res = await fetch(`/projects/{{ project.id }}/batch_gen_base`, { method: 'POST' });
+                    const res = await fetch(`/projects/${currentProjectId}/batch_gen_base`, { method: 'POST' });
                     const data = await res.json();
                     if(data.status === 'success') {
                         showToast("批量任务已启动，请查看系统日志", "success");
+                        startAutoRefresh();
                     } else {
                         showToast("启动失败: " + (data.error || "未知错误"), "error");
                     }
@@ -1096,10 +1317,95 @@
             "确定要为所有角色生成完整图（8镜图）吗？此操作将在后台运行，请通过系统日志查看进度。",
             async () => {
                 try {
-                    const res = await fetch(`/projects/{{ project.id }}/batch_gen_complete`, { method: 'POST' });
+                    const res = await fetch(`/projects/${currentProjectId}/batch_gen_complete`, { method: 'POST' });
                     const data = await res.json();
                     if(data.status === 'success') {
                         showToast("批量任务已启动，请查看系统日志", "success");
+                        startAutoRefresh();
+                    } else {
+                        showToast("启动失败: " + (data.error || "未知错误"), "error");
+                    }
+                } catch(e) {
+                    showToast("请求失败", "error");
+                }
+            }
+        );
+    }
+
+    async function triggerBatchGenSceneBase() {
+        showConfirmation(
+            "一键生成所有场景基图",
+            "确定要为所有草稿状态的场景生成基图吗？此操作将在后台运行，请通过系统日志查看进度。",
+            async () => {
+                try {
+                    const res = await fetch(`/projects/${currentProjectId}/batch_gen_scene_base`, { method: 'POST' });
+                    const data = await res.json();
+                    if(data.status === 'success') {
+                        showToast("批量任务已启动，请查看系统日志", "success");
+                        startAutoRefresh();
+                    } else {
+                        showToast("启动失败: " + (data.error || "未知错误"), "error");
+                    }
+                } catch(e) {
+                    showToast("请求失败", "error");
+                }
+            }
+        );
+    }
+
+    async function triggerBatchGenSceneMerge() {
+        showConfirmation(
+            "一键生成角色合并图",
+            "确定要为所有就绪场景生成角色合并图吗？此操作将在后台运行，请通过系统日志查看进度。",
+            async () => {
+                try {
+                    const res = await fetch(`/projects/${currentProjectId}/batch_gen_scene_merge`, { method: 'POST' });
+                    const data = await res.json();
+                    if(data.status === 'success') {
+                        showToast("批量任务已启动，请查看系统日志", "success");
+                        startAutoRefresh();
+                    } else {
+                        showToast("启动失败: " + (data.error || "未知错误"), "error");
+                    }
+                } catch(e) {
+                    showToast("请求失败", "error");
+                }
+            }
+        );
+    }
+
+    async function triggerBatchGenVideo() {
+        showConfirmation(
+            "一键生成所有视频",
+            "确定要为所有已完成合并的场景生成视频吗？此操作将在后台运行，请通过系统日志查看进度。",
+            async () => {
+                try {
+                    const res = await fetch(`/projects/${currentProjectId}/batch_gen_video`, { method: 'POST' });
+                    const data = await res.json();
+                    if(data.status === 'success') {
+                        showToast("批量任务已启动，请查看系统日志", "success");
+                        startAutoRefresh();
+                    } else {
+                        showToast("启动失败: " + (data.error || "未知错误"), "error");
+                    }
+                } catch(e) {
+                    showToast("请求失败", "error");
+                }
+            }
+        );
+    }
+
+    async function triggerBatchRegenerateAll() {
+        showConfirmation(
+            "一键重新生成所有基础图片",
+            "确定要重新生成所有图片吗？<br><br><span class='text-danger'>警告：此操作将清空所有现有图片，并重新执行全流程生成！</span><br><br><div class='alert alert-light border small text-secondary mb-2'><strong>💡 功能说明：</strong><br>通常用于先执行一次性把大部分的图片进行生成后，再单独进入人物或场景进行微调后再单独生成不合理的部分。</div><br>执行顺序：基图 -> 8镜图 -> 场景基图 -> 角色合并",
+            async () => {
+                try {
+                    const res = await fetch(`/projects/${currentProjectId}/batch_regenerate_all`, { method: 'POST' });
+                    const data = await res.json();
+                    if(data.status === 'success') {
+                        showToast("全流程重生成任务已启动，请查看系统日志", "success");
+                        startAutoRefresh();
                     } else {
                         showToast("启动失败: " + (data.error || "未知错误"), "error");
                     }

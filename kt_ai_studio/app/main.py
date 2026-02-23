@@ -95,12 +95,13 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 app.include_router(projects.router)
 app.include_router(players.router)
 app.include_router(tasks.router)
-from app.routes import styles, llm, scenes, settings, system
+from app.routes import styles, llm, scenes, settings, system, videos
 app.include_router(scenes.router)
 app.include_router(styles.router)
 app.include_router(llm.router)
 app.include_router(settings.router)
 app.include_router(system.router)
+app.include_router(videos.router, prefix="/videos")
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):

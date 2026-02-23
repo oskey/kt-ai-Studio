@@ -72,6 +72,44 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Video Generation Settings -->
+            <div class="col-12">
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-header bg-white border-bottom-0 pt-4 px-4 pb-0">
+                        <div class="d-flex align-items-center mb-2">
+                            <div class="icon-square bg-danger bg-opacity-10 text-danger rounded-3 me-3">
+                                <i class="bi bi-film fs-4"></i>
+                            </div>
+                            <h5 class="fw-bold mb-0">视频生成默认值</h5>
+                        </div>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="row">
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label text-secondary small fw-bold">默认宽度 (Width)</label>
+                                <input type="number" name="video_gen_width" class="form-control bg-light border-0" value="{{ config.get('video_gen_width', 640) }}" required>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label text-secondary small fw-bold">默认高度 (Height)</label>
+                                <input type="number" name="video_gen_height" class="form-control bg-light border-0" value="{{ config.get('video_gen_height', 640) }}" required>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label text-secondary small fw-bold">默认帧数 (Length)</label>
+                                <input type="number" name="video_gen_length" class="form-control bg-light border-0" value="{{ config.get('video_gen_length', 81) }}" required>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label text-secondary small fw-bold">FPS</label>
+                                <input type="number" name="video_gen_fps" class="form-control bg-light border-0" value="{{ config.get('video_gen_fps', 16) }}" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-secondary small fw-bold">默认随机种子 (Seed)</label>
+                                <input type="number" name="video_gen_seed" class="form-control bg-light border-0" value="{{ config.get('video_gen_seed', 264590) }}" required>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- Action Bar -->

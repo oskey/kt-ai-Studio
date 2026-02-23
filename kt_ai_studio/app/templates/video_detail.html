@@ -1,0 +1,736 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid px-4">
+    <!-- Breadcrumb & Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0 small">
+                <li class="breadcrumb-item"><a href="/projects" class="text-decoration-none text-secondary">项目列表</a></li>
+                <li class="breadcrumb-item"><a href="/projects/{{ project.id }}" class="text-decoration-none text-secondary">项目详情</a></li>
+                <li class="breadcrumb-item active fw-medium text-dark">视频生成: {{ scene.name }}</li>
+            </ol>
+        </nav>
+        
+        <div class="d-flex align-items-center gap-2">
+            <span class="text-secondary small">状态:</span>
+            {% if video.status == 'completed' %}
+            <span class="badge bg-success-subtle text-success rounded-pill">完成</span>
+            {% elif video.status == 'generating' or video.status == 'queued' %}
+            <span class="badge bg-primary-subtle text-primary rounded-pill">
+                <span class="spinner-border spinner-border-sm me-1" style="width: 0.7rem; height: 0.7rem;"></span>运行中
+            </span>
+            {% elif video.status == 'failed' %}
+            <span class="badge bg-danger-subtle text-danger rounded-pill">失败</span>
+            {% else %}
+            <span class="badge bg-secondary-subtle text-secondary rounded-pill">草稿</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Left Column: Context & Prompts -->
+        <div class="col-lg-5">
+            <!-- Source Scene Info -->
+            <div class="card mb-3">
+                <div class="card-header bg-white border-bottom-0 pt-3 pb-0">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-image me-2 text-primary"></i>源场景信息</h6>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex gap-3">
+                        <div class="flex-shrink-0">
+                            {% if scene.merged_image_path %}
+                            <img src="{{ to_web_path(scene.merged_image_path) }}" class="rounded-3 border" style="width: 120px; height: 120px; object-fit: cover; cursor: zoom-in;" onclick="showPreview(this.src)">
+                            {% else %}
+                            <div class="bg-light rounded-3 d-flex align-items-center justify-content-center text-secondary border" style="width: 120px; height: 120px;">
+                                <small>无合并图</small>
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="flex-grow-1">
+                            <h6 class="fw-bold mb-1">{{ scene.name }}</h6>
+                            <div class="small text-secondary mb-2">{{ scene.base_desc|truncate(60) }}</div>
+                            <div class="d-flex gap-2">
+                                <span class="badge bg-light text-secondary border">E{{ scene.episode }}</span>
+                                <span class="badge bg-light text-secondary border">{{ scene.shot }}镜</span>
+                                <span class="badge bg-light text-secondary border">{{ scene.scene_type }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <label class="text-label x-small text-muted mb-1">LLM 上下文 (自动生成)</label>
+                        <textarea class="form-control form-control-sm bg-light border-0 text-secondary" rows="4" readonly style="font-size: 0.8rem;">{{ scene.video_llm_context or '暂无上下文信息，请先完成场景角色合并。' }}</textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Prompts -->
+            <div class="card mb-3">
+                <div class="card-header bg-white border-bottom-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-chat-text me-2 text-primary"></i>视频提示词</h6>
+                    <button class="btn btn-sm btn-outline-primary rounded-pill px-3" onclick="generatePrompts()" {% if not scene.video_llm_context %}disabled{% endif %}>
+                        <i class="bi bi-magic me-1"></i>生成提示词
+                    </button>
+                </div>
+                <div class="card-body">
+                    <form id="videoSettingsForm">
+                        <div class="mb-3">
+                            <label class="text-label mb-1 text-success">正向提示词 (Prompt Positive)</label>
+                            <textarea name="prompt_pos" class="form-control form-control-sm bg-light border-0" rows="5" placeholder="描述视频内容、动作、运镜等...">{{ video.prompt_pos or '' }}</textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="text-label mb-1 text-danger">负向提示词 (Prompt Negative)</label>
+                            <textarea name="prompt_neg" class="form-control form-control-sm bg-light border-0" rows="3" placeholder="不需要出现的元素...">{{ video.prompt_neg or '' }}</textarea>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Settings & Generation -->
+        <div class="col-lg-7">
+            <!-- Generation Settings -->
+            <div class="card mb-4">
+                <div class="card-header bg-white border-bottom-0 pt-3 pb-0">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-sliders me-2 text-primary"></i>生成参数</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3 col-6">
+                            <label class="text-label x-small text-secondary">宽度 (Width)</label>
+                            <input type="number" form="videoSettingsForm" name="width" value="{{ video.width }}" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="text-label x-small text-secondary">高度 (Height)</label>
+                            <input type="number" form="videoSettingsForm" name="height" value="{{ video.height }}" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="text-label x-small text-secondary">帧数 (Length)</label>
+                            <input type="number" form="videoSettingsForm" name="length" id="lengthInput" value="{{ video.length }}" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <label class="text-label x-small text-secondary">FPS</label>
+                            <input type="number" form="videoSettingsForm" name="fps" id="fpsInput" value="{{ video.fps }}" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="text-label x-small text-secondary">随机种子 (Seed)</label>
+                            <div class="input-group input-group-sm">
+                                <input type="number" form="videoSettingsForm" name="seed" id="seedInput" value="{{ video.seed }}" class="form-control">
+                                <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('seedInput').value = Math.floor(Math.random() * 10000000000)">
+                                    <i class="bi bi-shuffle"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-6 d-flex align-items-end">
+                            <button type="button" class="btn btn-primary w-100 rounded-pill shadow-sm fw-bold py-2" onclick="saveAndGenerate()">
+                                <i class="bi bi-film me-2"></i>保存并生成视频
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Video Result -->
+            <div class="card">
+                <div class="card-header bg-white border-bottom-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-play-circle me-2 text-primary"></i>生成结果</h6>
+                    {% if video.video_path %}
+                    <a href="{{ to_web_path(video.video_path) }}" download class="btn btn-sm btn-outline-secondary rounded-pill">
+                        <i class="bi bi-download me-1"></i>下载
+                    </a>
+                    {% endif %}
+                </div>
+                <div class="card-body text-center">
+                    {% if video.video_path %}
+                    <video controls class="w-100 rounded-3 shadow-sm border" style="max-height: 500px; background-color: #000;">
+                        <source src="{{ to_web_path(video.video_path) }}" type="video/mp4">
+                        您的浏览器不支持视频播放。
+                    </video>
+                    <div class="mt-2 text-secondary small">
+                        生成于: {{ video.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                    </div>
+                    {% else %}
+                    <div class="bg-light rounded-3 d-flex align-items-center justify-content-center text-secondary" style="height: 400px; border: 2px dashed #dee2e6;">
+                        <div class="text-center">
+                            <div class="mb-3">
+                                <i class="bi bi-film fs-1 text-secondary opacity-50"></i>
+                            </div>
+                            <h6 class="fw-bold text-dark">暂无视频</h6>
+                            <p class="small mb-0">配置参数并点击生成按钮开始制作</p>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+             <!-- Task History -->
+            <div class="card mt-4">
+                <div class="card-header bg-white border-bottom-0 pt-3 pb-0 d-flex justify-content-between align-items-center">
+                    <h6 class="fw-bold mb-0"><i class="bi bi-clock-history me-2 text-primary"></i>任务记录</h6>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-light btn-icon" type="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-3">
+                             <li>
+                                <button type="button" class="dropdown-item py-2 text-danger" onclick="forceInterrupt()">
+                                    <i class="bi bi-stop-circle me-2"></i>强制中断所有任务
+                                </button>
+                            </li>
+                            <li>
+                                <button type="button" class="dropdown-item py-2 text-warning" onclick="showForceResetModal()">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>强制重置任务状态 (SQL)
+                                </button>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <form action="/tasks/clear_logs_video" method="post" class="d-inline">
+                                    <input type="hidden" name="video_id" value="{{ video.id }}">
+                                    <button type="submit" class="dropdown-item py-2">
+                                        <i class="bi bi-trash me-2"></i>清理已完成/失败记录
+                                    </button>
+                                </form>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <ul class="list-group list-group-flush" id="taskList">
+                        {% for task in tasks[:10] %}
+                        <li class="list-group-item border-0 border-bottom px-3 py-3" id="task-{{ task.id }}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="fw-medium text-dark" style="font-size: 0.9rem;">
+                                        {% if task.task_type == 'GEN_VIDEO_PROMPT' %}生成提示词
+                                        {% elif task.task_type == 'GEN_VIDEO' %}生成视频
+                                        {% else %}{{ task.task_type }}{% endif %}
+                                    </div>
+                                    {% if task.error %}
+                                    <div class="text-danger small mt-1 task-error">{{ task.error|truncate(30) }}</div>
+                                    {% else %}
+                                    <div class="text-muted small mt-1">
+                                        <span class="task-time">{{ task.created_at.strftime('%H:%M:%S') }}</span>
+                                        {% if task.status == 'running' %}
+                                        <span class="ms-1 badge bg-primary-subtle text-primary rounded-pill task-progress">{{ task.progress }}%</span>
+                                        {% endif %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div>
+                                    {% if task.status == 'done' %}
+                                    <span class="badge bg-success-subtle text-success rounded-pill task-status">完成</span>
+                                    {% elif task.status == 'failed' %}
+                                    <span class="badge bg-danger-subtle text-danger rounded-pill task-status">失败</span>
+                                    {% elif task.status == 'running' %}
+                                    <span class="badge bg-primary-subtle text-primary rounded-pill task-status">
+                                        <span class="spinner-border spinner-border-sm me-1" style="width: 0.7rem; height: 0.7rem;"></span>运行中
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary-subtle text-secondary rounded-pill task-status">{{ task.status }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Video Generation Modal (Blocking) -->
+<div class="modal fade" id="videoGenerationModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom-0 pb-0">
+        <h5 class="modal-title fw-bold text-primary"><i class="bi bi-film me-2"></i>视频生成</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="gen-modal-close-btn"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <!-- Running UI -->
+        <div id="gen-modal-running-ui">
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+                <h6 class="fw-bold" id="gen-modal-status-text">正在初始化...</h6>
+                <div class="progress mt-3 mb-2" style="height: 6px;">
+                    <div id="gen-modal-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+                <p class="text-muted small" id="gen-modal-detail-text">正在提交任务...</p>
+                <button class="btn btn-outline-danger btn-sm rounded-pill mt-3" onclick="interruptVideoFlow()">
+                    <i class="bi bi-stop-circle me-1"></i>停止执行
+                </button>
+            </div>
+        </div>
+
+        <!-- Error UI -->
+        <div id="gen-modal-error-ui" style="display:none;">
+            <div class="alert alert-danger border-0">
+                <div class="d-flex">
+                    <i class="bi bi-x-circle-fill me-2 fs-4"></i>
+                    <div>
+                        <h6 class="fw-bold mb-1">生成失败</h6>
+                        <div id="gen-modal-error-msg" class="small"></div>
+                    </div>
+                </div>
+            </div>
+             <div class="text-center mt-3">
+                 <button class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+
+        <!-- Success UI -->
+        <div id="gen-modal-success-ui" style="display:none;">
+            <div class="text-center py-4 text-success">
+                <i class="bi bi-check-circle-fill display-4 mb-3"></i>
+                <h6 class="fw-bold">视频生成完成！</h6>
+                <p class="text-muted small">您可以现在查看生成的结果了。</p>
+                 <div class="text-center mt-3">
+                     <button class="btn btn-primary rounded-pill px-4" data-bs-dismiss="modal" onclick="window.location.reload()">查看结果</button>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Force Interrupt Modal -->
+<div class="modal fade" id="forceInterruptModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom-0 pb-0">
+        <h5 class="modal-title fw-bold text-danger"><i class="bi bi-stop-circle-fill me-2"></i>中断确认</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <div class="alert alert-warning bg-warning-subtle border-warning-subtle text-dark">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i><strong>注意</strong>
+        </div>
+        <p class="mb-2">确定要强制中断所有任务吗？</p>
+        <p class="small text-secondary mb-0">ComfyUI 中正在运行的任务也将被立即停止。</p>
+      </div>
+      <div class="modal-footer border-top-0 pt-0">
+        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-danger rounded-pill px-4" onclick="confirmForceInterrupt()">
+            <span id="force-interrupt-btn-text">确认中断</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Force Reset Modal -->
+<div class="modal fade" id="forceResetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom-0 pb-0">
+        <h5 class="modal-title fw-bold text-danger"><i class="bi bi-radioactive me-2"></i>强制重置警告</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <div class="alert alert-danger bg-danger-subtle border-danger-subtle text-danger">
+            <i class="bi bi-exclamation-octagon-fill me-2"></i><strong>高风险操作</strong>
+        </div>
+        <p class="mb-2">您正在尝试强制重置任务列表。此操作将：</p>
+        <ul class="text-secondary small mb-3">
+            <li>清空当前页面的任务列表</li>
+            <li>无论任务处于排队、运行还是完成状态，都会被清除</li>
+        </ul>
+        <p class="mb-0 fw-bold text-dark">仅在任务卡死且无法通过常规手段停止时使用。</p>
+      </div>
+      <div class="modal-footer border-top-0 pt-0">
+        <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+        <button type="button" class="btn btn-danger rounded-pill px-4" onclick="confirmForceReset()">
+            <span id="force-reset-btn-text">确认重置</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width: 90vw;">
+        <div class="modal-content bg-transparent border-0 shadow-none">
+            <div class="modal-body p-0 text-center position-relative">
+                <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3" data-bs-dismiss="modal" aria-label="Close" style="z-index: 1056; background-color: rgba(0,0,0,0.5); padding: 1rem; border-radius: 50%;"></button>
+                <img id="previewImage" src="" class="img-fluid rounded-3 shadow-lg" style="max-height: 90vh; max-width: 100%; object-fit: contain;">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="running-tasks-data" 
+     data-task-ids="{% for task in tasks if task.status in ['running', 'queued'] %}{{ task.id }}{% if not loop.last %},{% endif %}{% endfor %}"
+     style="display:none;"></div>
+
+<script>
+    const videoId = Number("{{ video.id }}");
+    let videoGenerationModal, forceResetModal, forceInterruptModal;
+    const taskStatusCache = {};
+
+    document.addEventListener('DOMContentLoaded', () => {
+        checkTaskStatus();
+        videoGenerationModal = new bootstrap.Modal(document.getElementById('videoGenerationModal'));
+        forceResetModal = new bootstrap.Modal(document.getElementById('forceResetModal'));
+        forceInterruptModal = new bootstrap.Modal(document.getElementById('forceInterruptModal'));
+    });
+    
+    function showPreview(src) {
+        document.getElementById('previewImage').src = src;
+        var myModal = new bootstrap.Modal(document.getElementById('previewModal'));
+        myModal.show();
+    }
+
+    function showForceResetModal() {
+        forceResetModal.show();
+    }
+
+    function forceInterrupt() {
+        forceInterruptModal.show();
+    }
+
+    async function saveSettings() {
+        const form = document.getElementById('videoSettingsForm');
+        const formData = new FormData(form);
+        
+        try {
+            const res = await fetch(`/videos/${videoId}/update`, {
+                method: 'POST',
+                body: formData
+            });
+            if (res.ok) {
+                // showToast("设置已保存", "success");
+                return true;
+            } else {
+                showToast("保存失败", "error");
+                return false;
+            }
+        } catch (e) {
+            showToast("网络错误", "error");
+            return false;
+        }
+    }
+
+    async function generatePrompts() {
+        showToast("正在请求 LLM 生成提示词...", "info");
+        try {
+            const res = await fetch(`/videos/${videoId}/generate_prompts`, { method: 'POST' });
+            const data = await res.json();
+            
+            if (data.status === 'success') {
+                showToast("提示词生成任务已提交", "success");
+                // Wait a bit for DB to commit, then refresh the task list
+                setTimeout(() => updatePageContent(), 1000);
+            } else {
+                showToast("提交失败: " + data.error, "error");
+            }
+        } catch (e) {
+            showToast("请求失败", "error");
+        }
+    }
+
+    async function saveAndGenerate() {
+        // 1. Save Settings
+        const saved = await saveSettings();
+        if (!saved) return;
+        
+        // 2. Open Modal & Initialize
+        const runningUI = document.getElementById('gen-modal-running-ui');
+        const errorUI = document.getElementById('gen-modal-error-ui');
+        const successUI = document.getElementById('gen-modal-success-ui');
+        const statusText = document.getElementById('gen-modal-status-text');
+        const detailText = document.getElementById('gen-modal-detail-text');
+        const progressBar = document.getElementById('gen-modal-progress-bar');
+        const errorMsg = document.getElementById('gen-modal-error-msg');
+        
+        runningUI.style.display = 'block';
+        errorUI.style.display = 'none';
+        successUI.style.display = 'none';
+        statusText.innerText = "正在初始化...";
+        detailText.innerText = "正在提交任务...";
+        progressBar.style.width = "0%";
+        
+        videoGenerationModal.show();
+
+        // 3. Submit Task
+        try {
+            const res = await fetch(`/videos/${videoId}/generate`, { method: 'POST' });
+            const data = await res.json();
+            
+            if (data.status === 'success') {
+                const taskId = data.task_id;
+                // Immediately refresh background list so the new task appears in the history card
+                setTimeout(() => updatePageContent(), 1000);
+                monitorTaskInModal(taskId);
+            } else {
+                throw new Error(data.error || "启动失败");
+            }
+        } catch (e) {
+            console.error(e);
+            runningUI.style.display = 'none';
+            errorUI.style.display = 'block';
+            errorMsg.innerText = e.message;
+        }
+    }
+
+    function monitorTaskInModal(taskId) {
+        const runningUI = document.getElementById('gen-modal-running-ui');
+        const errorUI = document.getElementById('gen-modal-error-ui');
+        const successUI = document.getElementById('gen-modal-success-ui');
+        const statusText = document.getElementById('gen-modal-status-text');
+        const detailText = document.getElementById('gen-modal-detail-text');
+        const progressBar = document.getElementById('gen-modal-progress-bar');
+        
+        let errorCount = 0;
+        
+        const check = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/tasks/status?task_ids=${taskId}&_t=${new Date().getTime()}`);
+                const statusData = await res.json();
+                const task = statusData[taskId];
+                
+                if (task) {
+                    progressBar.style.width = `${task.progress}%`;
+                    
+                    if (task.status === 'running' || task.status === 'queued') {
+                        errorCount = 0;
+                        if (task.status === 'queued') {
+                            statusText.innerText = "任务排队中...";
+                        } else {
+                            statusText.innerText = "正在生成视频...";
+                            // Parse detailed message if available
+                            if (task.result_json) {
+                                try {
+                                    // Sometimes result_json is object, sometimes string
+                                    const result = (typeof task.result_json === 'string') ? JSON.parse(task.result_json) : task.result_json;
+                                    // if (result.status_message) statusText.innerText = result.status_message;
+                                } catch(e) {}
+                            }
+                        }
+                        detailText.innerText = `进度: ${task.progress}%`;
+                        
+                    } else if (task.status === 'done') {
+                        clearInterval(check);
+                        runningUI.style.display = 'none';
+                        successUI.style.display = 'block';
+                        // Refresh background tasks list too
+                        updatePageContent();
+                        
+                    } else if (task.status === 'failed') {
+                        clearInterval(check);
+                        throw new Error(task.error || "任务失败");
+                    }
+                }
+            } catch(e) {
+                console.error("Poll error", e);
+                errorCount++;
+                if (e.message.includes("任务失败")) {
+                    runningUI.style.display = 'none';
+                    errorUI.style.display = 'block';
+                    document.getElementById('gen-modal-error-msg').innerText = e.message;
+                    updatePageContent(); // Refresh list on failure too
+                } else if (errorCount > 10) {
+                     clearInterval(check);
+                     runningUI.style.display = 'none';
+                     errorUI.style.display = 'block';
+                     document.getElementById('gen-modal-error-msg').innerText = "网络连接中断";
+                }
+            }
+        }, 1000);
+    }
+
+    async function interruptVideoFlow() {
+        if(confirm("确定要停止视频生成吗？")) {
+            try {
+                await fetch('/tasks/interrupt', { method: 'POST' });
+            } catch(e) { console.error(e); }
+        }
+    }
+
+    async function confirmForceInterrupt() {
+        const btnText = document.getElementById('force-interrupt-btn-text');
+        const originalText = btnText.innerText;
+        btnText.innerText = "中断中...";
+        const btn = document.querySelector('#forceInterruptModal .btn-danger');
+        btn.disabled = true;
+
+        try {
+            const formData = new FormData();
+            // No task_id means global interrupt
+            await fetch('/tasks/interrupt', { method: 'POST', body: formData });
+            forceInterruptModal.hide();
+            showToast('中断指令已发送', 'success');
+            setTimeout(() => window.location.reload(), 1500);
+        } catch(e) {
+            showToast('中断请求失败', 'error');
+        } finally {
+            btnText.innerText = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    async function confirmForceReset() {
+        const btnText = document.getElementById('force-reset-btn-text');
+        const originalText = btnText.innerText;
+        btnText.innerText = "处理中...";
+        const btn = document.querySelector('#forceResetModal .btn-danger');
+        btn.disabled = true;
+
+        try {
+            const formData = new FormData();
+            formData.append('video_id', "{{ video.id }}");
+            
+            const response = await fetch('/tasks/force_reset_video', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                forceResetModal.hide();
+                showToast("重置成功！页面即将刷新。", "success");
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                const data = await response.json();
+                showToast(`重置失败: ${data.detail || '未知错误'}`, "error");
+            }
+        } catch (e) {
+            console.error(e);
+            showToast("网络请求失败", "error");
+        } finally {
+            btnText.innerText = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    // Polling for Task List
+    function checkTaskStatus() {
+        const dataElement = document.getElementById('running-tasks-data');
+        if (!dataElement) return;
+        
+        let runningTaskIds = [];
+        try {
+            const rawData = dataElement.getAttribute('data-task-ids');
+            if (rawData && rawData.trim() !== '') {
+                runningTaskIds = rawData.split(',').filter(id => id.trim() !== "");
+            }
+        } catch (e) {
+            runningTaskIds = [];
+        }
+
+        if (runningTaskIds.length > 0) {
+            const statusBadge = document.querySelector('.d-flex.align-items-center.gap-2');
+            if (statusBadge && !statusBadge.querySelector('.spinner-grow')) {
+                const indicator = document.createElement('span');
+                indicator.className = 'badge bg-light text-primary border ms-2';
+                indicator.innerHTML = '<span class="spinner-grow spinner-grow-sm me-1" style="width: 0.5rem; height: 0.5rem;"></span>同步中...';
+                statusBadge.appendChild(indicator);
+            }
+            
+            const url = `/api/tasks/status?task_ids=${runningTaskIds.join(',')}&_t=${new Date().getTime()}`;
+            
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    let shouldRefresh = false;
+                    for (const taskId of runningTaskIds) {
+                        const taskData = data[taskId];
+                        if (!taskData) continue;
+                        
+                        const status = taskData.status;
+                        const prevStatus = taskStatusCache[taskId];
+                        
+                        if (status && (!prevStatus || status !== prevStatus)) {
+                            shouldRefresh = true;
+                        }
+                        
+                        const taskItem = document.getElementById(`task-${taskId}`);
+                        if (taskItem) {
+                            const progressBar = taskItem.querySelector('.progress-bar');
+                            if (progressBar) progressBar.style.width = `${taskData.progress}%`;
+                            
+                            const badge = taskItem.querySelector('.badge');
+                            if (badge) {
+                                if (status === 'running') {
+                                    badge.className = 'badge rounded-pill bg-primary-subtle text-primary border border-primary-subtle';
+                                    badge.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>运行中';
+                                } else if (status === 'done') {
+                                    badge.className = 'badge rounded-pill bg-success-subtle text-success border border-success-subtle';
+                                    badge.innerText = '完成';
+                                } else if (status === 'failed') {
+                                    badge.className = 'badge rounded-pill bg-danger-subtle text-danger border border-danger-subtle';
+                                    badge.innerText = '失败';
+                                }
+                            }
+                        }
+                        taskStatusCache[taskId] = status;
+                    }
+                    
+                    if (shouldRefresh) {
+                        updatePageContent();
+                    }
+                })
+                .catch(e => console.error(e));
+        }
+    }
+
+    async function updatePageContent() {
+        try {
+            // Correctly handle URL parameters
+            const url = new URL(window.location.href);
+            url.searchParams.set('t', new Date().getTime());
+            
+            const response = await fetch(url.toString());
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
+            const html = await response.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+
+            const newTaskHistory = doc.querySelector('.card .list-group');
+            const currentTaskHistory = document.querySelector('.card .list-group');
+            if (newTaskHistory && currentTaskHistory) currentTaskHistory.innerHTML = newTaskHistory.innerHTML;
+            
+            const newStatus = doc.querySelector('.d-flex.align-items-center.gap-2');
+            const currentStatus = document.querySelector('.d-flex.align-items-center.gap-2');
+            if (newStatus && currentStatus) currentStatus.innerHTML = newStatus.innerHTML;
+            
+            // Also update context if generated (e.g. after prompt gen)
+            const newContext = doc.querySelector('textarea[readonly]');
+            const currentContext = document.querySelector('textarea[readonly]');
+            if (newContext && currentContext) currentContext.value = newContext.value;
+            
+            // Also update prompts if generated
+            const newPromptPos = doc.querySelector('textarea[name="prompt_pos"]');
+            const currentPromptPos = document.querySelector('textarea[name="prompt_pos"]');
+            if (newPromptPos && currentPromptPos && !document.activeElement.isEqualNode(currentPromptPos)) {
+                 currentPromptPos.value = newPromptPos.value;
+            }
+            const newPromptNeg = doc.querySelector('textarea[name="prompt_neg"]');
+            const currentPromptNeg = document.querySelector('textarea[name="prompt_neg"]');
+            if (newPromptNeg && currentPromptNeg && !document.activeElement.isEqualNode(currentPromptNeg)) {
+                 currentPromptNeg.value = newPromptNeg.value;
+            }
+
+            const newRunningData = doc.getElementById('running-tasks-data');
+            const currentRunningData = document.getElementById('running-tasks-data');
+            if (newRunningData && currentRunningData) {
+                currentRunningData.setAttribute('data-task-ids', newRunningData.getAttribute('data-task-ids'));
+                checkTaskStatus(); 
+            }
+            
+            // Update Video Result Area if done
+            const newVideoArea = doc.querySelector('.col-lg-7 .card:nth-child(2) .card-body');
+            const currentVideoArea = document.querySelector('.col-lg-7 .card:nth-child(2) .card-body');
+            if (newVideoArea && currentVideoArea) currentVideoArea.innerHTML = newVideoArea.innerHTML;
+
+        } catch (err) {
+            console.error("Failed to update page content:", err);
+        }
+    }
+
+    setInterval(checkTaskStatus, 2000);
+</script>
+{% endblock %}

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.db import models
 # Import services lazily to avoid circular imports if any
-from app.services.llm.openai_provider import generate_player_prompts, generate_scene_prompts, generate_story_assets
+from app.services.llm.openai_provider import generate_player_prompts, generate_scene_prompts, generate_story_assets, generate_video_prompts
 from app.services.comfyui.runner import ComfyRunner
 
 class TaskManager:
@@ -163,6 +163,10 @@ class TaskManager:
             self._handle_auto_generate_story(db, task)
         elif task.task_type == "SCENE_MERGE":
             self._handle_scene_merge(db, task)
+        elif task.task_type == "GEN_VIDEO_PROMPT":
+            self._handle_gen_video_prompt(db, task)
+        elif task.task_type == "GEN_VIDEO":
+            self._handle_gen_video(db, task)
         else:
             raise ValueError(f"Unknown task type: {task.task_type}")
 
@@ -647,6 +651,101 @@ class TaskManager:
             
         task.result_json = json.dumps(result)
         task.progress = 100
+
+    def _handle_gen_video_prompt(self, db: Session, task: models.Task):
+        """
+        Generates prompts for video generation using LLM.
+        """
+        video = task.video
+        if not video:
+            raise ValueError("Task has no associated video")
+            
+        scene = video.scene
+        if not scene.video_llm_context:
+            raise ValueError("Scene context missing")
+            
+        # Get LLM Profile
+        project = task.project
+        # Should we allow user to select profile per task? 
+        # For now use default or first available.
+        # But wait, LLM profiles are global.
+        # Let's pick default profile.
+        llm_profile = db.query(models.LLMProfile).filter(models.LLMProfile.is_default == True).first()
+        if not llm_profile:
+            llm_profile = db.query(models.LLMProfile).first()
+            
+        if not llm_profile:
+            raise ValueError("No LLM Profile configured")
+            
+        from app.services.llm.openai_provider import generate_video_prompts
+        
+        prompts = generate_video_prompts(
+            video_context=scene.video_llm_context,
+            style_preset=project.style,
+            llm_profile=llm_profile
+        )
+        
+        # Save Result
+        task.result_json = json.dumps(prompts)
+        
+        # Update Video Fields
+        video.prompt_pos = prompts.get("prompt_pos")
+        video.prompt_neg = prompts.get("prompt_neg")
+        
+        # Update FPS/Length if provided by LLM
+        if "fps" in prompts and prompts["fps"]:
+            try:
+                video.fps = int(prompts["fps"])
+            except:
+                pass
+                
+        if "length" in prompts and prompts["length"]:
+            try:
+                video.length = int(prompts["length"])
+            except:
+                pass
+
+        # video.status = "prompt_generated" 
+        
+        db.commit()
+
+    def _handle_gen_video(self, db: Session, task: models.Task):
+        def progress_callback(event, data):
+            try:
+                db.refresh(task)
+                if task.status == 'failed':
+                    raise InterruptedError("Task cancelled by user")
+            except Exception:
+                raise InterruptedError("Task deleted")
+                
+            if event == 'progress':
+                val = data.get('value', 0)
+                max_val = data.get('max', 1)
+                if max_val > 0:
+                    progress = int((val / max_val) * 100)
+                    progress = min(progress, 99)
+                    task.progress = progress
+                    db.commit()
+        
+        try:
+            result = self.comfy_runner.run_gen_video(
+                task,
+                callback=progress_callback,
+                cancel_check_func=lambda: not self.running
+            )
+            
+            # Update Video
+            video = task.video
+            video.video_path = result["video_path"]
+            video.status = "completed"
+            
+            task.result_json = json.dumps(result)
+            task.progress = 100
+            db.commit()
+            
+        except InterruptedError:
+            print("Gen Video Interrupted")
+            raise
 
     def _handle_scene_merge(self, db: Session, task: models.Task):
         import os

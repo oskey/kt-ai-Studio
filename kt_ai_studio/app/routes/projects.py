@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends, Request, Form
+from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -157,3 +157,83 @@ async def create_scene(
         base_desc, 
         related_players
     )
+
+@router.post("/projects/{project_id}/batch_gen_complete")
+async def batch_gen_complete(
+    project_id: int, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(session.get_db)
+):
+    from app.services.tasks.batch import process_batch_gen_complete
+    
+    project = crud.get_project(db, project_id)
+    if not project:
+        return JSONResponse({"error": "Project not found"}, status_code=404)
+        
+    background_tasks.add_task(process_batch_gen_complete, project_id)
+    
+    return JSONResponse({"status": "success", "message": "Batch task started"})
+
+@router.post("/projects/{project_id}/batch_gen_scene_base")
+async def batch_gen_scene_base(
+    project_id: int, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(session.get_db)
+):
+    from app.services.tasks.batch import process_batch_gen_scene_base
+    
+    project = crud.get_project(db, project_id)
+    if not project:
+        return JSONResponse({"error": "Project not found"}, status_code=404)
+        
+    background_tasks.add_task(process_batch_gen_scene_base, project_id)
+    
+    return JSONResponse({"status": "success", "message": "Batch scene base task started"})
+
+@router.post("/projects/{project_id}/batch_gen_scene_merge")
+async def batch_gen_scene_merge(
+    project_id: int, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(session.get_db)
+):
+    from app.services.tasks.batch import process_batch_gen_scene_merge
+    
+    project = crud.get_project(db, project_id)
+    if not project:
+        return JSONResponse({"error": "Project not found"}, status_code=404)
+        
+    background_tasks.add_task(process_batch_gen_scene_merge, project_id)
+    
+    return JSONResponse({"status": "success", "message": "Batch scene merge task started"})
+
+@router.post("/projects/{project_id}/batch_regenerate_all")
+async def batch_regenerate_all(
+    project_id: int, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(session.get_db)
+):
+    from app.services.tasks.batch import process_batch_regenerate_all
+    
+    project = crud.get_project(db, project_id)
+    if not project:
+        return JSONResponse({"error": "Project not found"}, status_code=404)
+        
+    background_tasks.add_task(process_batch_regenerate_all, project_id)
+    
+    return JSONResponse({"status": "success", "message": "Batch regenerate all started"})
+
+@router.post("/projects/{project_id}/batch_gen_video")
+async def batch_gen_video(
+    project_id: int, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(session.get_db)
+):
+    from app.services.tasks.batch import process_batch_gen_video
+    
+    project = crud.get_project(db, project_id)
+    if not project:
+        return JSONResponse({"error": "Project not found"}, status_code=404)
+        
+    background_tasks.add_task(process_batch_gen_video, project_id)
+    
+    return JSONResponse({"status": "success", "message": "Batch video task started"})

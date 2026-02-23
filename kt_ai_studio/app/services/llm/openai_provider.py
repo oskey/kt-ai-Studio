@@ -576,6 +576,135 @@ Negative (负面风格): {style_neg}
     except Exception as e:
         raise Exception(f"OpenAI API Error ({llm_profile.provider}): {str(e)}")
 
+def generate_video_prompts(
+    video_context: str,
+    style_preset=None,
+    llm_profile=None
+) -> dict:
+    """
+    Generate prompts for Image-to-Video generation based on scene context.
+    video_context: JSON string containing 'scene' and 'characters' info.
+    """
+    if not llm_profile:
+        raise ValueError("No LLM Profile provided.")
+
+    client = OpenAI(
+        api_key=llm_profile.api_key,
+        base_url=llm_profile.base_url
+    )
+    
+    
+ 
+    # Add engine hint for model-specific prompting
+    engine_hint = f"{style_preset.engine_hint}" if style_preset and style_preset.engine_hint else "本项目使用 Qwen Image / Wan2.2 图像模型"
+    
+    style_name = style_preset.name if style_preset else "默认通用风格"
+    style_guard = style_preset.llm_style_guard if style_preset else "无特殊风格约束，保持写实。"
+    style_pos = style_preset.style_pos if style_preset else ""
+    style_neg = style_preset.style_neg if style_preset else ""
+
+    system_prompt = f"""你是一个专业的【图生视频提示词生成器】。
+你的任务是根据提供的【场景与角色上下文】，为 下游生成模型 视频生成模型编写提示词。
+
+【项目画风】
+{style_name}
+{style_guard}
+
+【画风正向（必须融入）】
+{style_pos}
+
+【画风反向（必须融入）】
+{style_neg}
+
+【下游生成模型】
+{engine_hint}
+
+【输入数据说明】
+输入是一个 JSON，包含 `scene`（场景信息）和 `characters`（角色列表）。
+`characters` 数组中的 `action_desc` 描述了角色在画面中的位置（如"左侧前景"）和动作。
+注意：ComfyUI 无法识别角色名字（如"陈平安"），也无法区分 image1/image2。
+
+【任务要求】
+1. **生成正向提示词 (prompt_pos)**：
+   - 必须是一段流畅的中文描述。
+   - **核心任务**：将 `characters` 中的空间位置和动作描述，转化为模型能理解的全局画面描述。
+   - **去名化**：绝对禁止出现角色名字。用 "a young man", "a woman in red", "a figure" 等通用词代替。
+   - **空间引导**：明确描述人物在画面中的位置（e.g., "on the left foreground", "in the center", "walking away from camera"）。
+   - **融合环境**：结合 `scene` 的 `visual_desc` 和 `shot_type`，描述整体氛围、光影和动态。
+   - **风格保持**：必须融入【画风正向】提示词，确保视频风格与原图一致。
+
+2. **生成负向提示词 (prompt_neg)**：
+   - 必须包含【画风反向】提示词。
+   - 包含通用视频负向词（如 "static, distortion, morphing, watermarks, text, bad anatomy"）。
+   - 返回的提示词必须使用中文。
+
+3. **生成视频参数 (fps, length)**：
+   - 根据动作复杂度推荐 FPS (通常 16 或 24)。
+   - 根据内容推荐时长 (Duration)，最长不超过 5 秒。
+   - 计算总帧数 (Length) = (FPS * Duration) + 1。
+   - 例如：3秒视频，FPS 16，Length = (16 * 3) + 1 = 49。
+   - 例如：5秒视频，FPS 24，Length = (24 * 5) + 1 = 121。
+
+【输出格式】
+必须是合法的 JSON格式：
+{{
+  "prompt_pos": "...",
+  "prompt_neg": "...",
+  "fps": 16,
+  "length": 49,
+  "duration_reasoning": "动作简单，3秒足够展示..."
+}}
+"""
+
+    user_prompt = f"""
+【场景与角色上下文】
+{video_context}
+
+请生成用于图生视频的 prompt_pos 和 prompt_neg。
+请注意：
+1. 必须融入画风【{style_name}】的风格词。
+2. 绝对不要出现人名，用"a young man/woman"等通用词。
+3. 准确描述人物位置和动作。
+5. 必须返回建议的 FPS 和 Length (计算公式: fps * 秒数 + 1)，最长不超过 5 秒。
+"""
+
+    if config.LLM_LOG:
+        print("-" * 50)
+        print("【LLM Video Prompt Input】")
+        print(system_prompt)
+        print(user_prompt)
+        print("-" * 50)
+
+    try:
+        completion = client.chat.completions.create(
+            model=llm_profile.model or "gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+            response_format={"type": "json_object"}
+        )
+        
+        content = completion.choices[0].message.content
+        
+        if config.LLM_LOG:
+            print("【LLM Video Prompt Output】")
+            print(content)
+            print("-" * 50)
+        
+        result = json.loads(content)
+        result["_usage"] = completion.usage.model_dump()
+        return result
+
+    except Exception as e:
+        print(f"LLM Video Prompt Error: {e}")
+        # Fallback
+        return {
+            "prompt_pos": "High quality video, cinematic lighting, detailed scene, dynamic motion.",
+            "prompt_neg": "low quality, static, deformed, watermark, text"
+        }
+
 def generate_scene_prompts(base_desc: str, style_preset=None, llm_profile=None, scene_type="Indoor") -> dict:
     if not llm_profile:
         raise ValueError("No LLM Profile provided. Please configure LLM in Settings.")

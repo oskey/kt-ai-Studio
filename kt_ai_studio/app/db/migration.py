@@ -113,6 +113,22 @@ def check_and_migrate_db():
         except Exception as e:
             print(f"Migration check failed for merged_image_path/prompts: {e}")
 
+    # Check for video_id column in kt_ai_task (Phase 6 Migration: Video)
+    with engine.connect() as conn:
+        try:
+            columns = conn.execute(text("PRAGMA table_info(kt_ai_task)")).fetchall()
+            column_names = [col[1] for col in columns]
+            
+            if "video_id" not in column_names:
+                print("Migrating: Adding video_id column to kt_ai_task...")
+                conn.execute(text("ALTER TABLE kt_ai_task ADD COLUMN video_id INTEGER REFERENCES kt_ai_video(id)"))
+                print("Migration successful: video_id added.")
+            else:
+                print("Schema check: video_id column exists.")
+                
+        except Exception as e:
+            print(f"Migration check failed for video_id in Task: {e}")
+
     # Check for SystemConfig table
     try:
         inspector = inspect(engine)

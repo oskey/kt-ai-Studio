@@ -66,6 +66,26 @@ async def clear_task_logs_scene(
     
     return RedirectResponse(url=f"/scenes/{scene_id}", status_code=303)
 
+@router.post("/tasks/clear_logs_video")
+async def clear_task_logs_video(
+    video_id: int = Form(...),
+    db: Session = Depends(session.get_db)
+):
+    # Only delete tasks for this video that are done or failed
+    db.query(models.Task).filter(
+        models.Task.video_id == video_id,
+        models.Task.status.in_(["done", "failed"])
+    ).delete(synchronize_session=False)
+    db.commit()
+    
+    # Redirect back to video manage page
+    # We need scene_id to construct the URL: /videos/manage?scene_id={scene_id}
+    # But we only have video_id. Let's fetch the video to get scene_id.
+    video = db.query(models.Video).filter(models.Video.id == video_id).first()
+    if video:
+        return RedirectResponse(url=f"/videos/manage?scene_id={video.scene_id}", status_code=303)
+    return JSONResponse({"status": "error", "message": "Video not found"}, status_code=404)
+
 @router.post("/tasks/force_reset_scene")
 async def force_reset_tasks_scene(
     scene_id: int = Form(...),
@@ -79,6 +99,30 @@ async def force_reset_tasks_scene(
         
         db.query(models.Task).filter(
             models.Task.scene_id == scene_id
+        ).delete(synchronize_session=False)
+        
+        db.commit()
+        
+        return JSONResponse({"status": "success", "message": "Tasks deleted successfully."})
+        
+    except Exception as e:
+        print(f"Force Reset Failed: {e}")
+        db.rollback()
+        return JSONResponse({"detail": str(e)}, status_code=500)
+
+@router.post("/tasks/force_reset_video")
+async def force_reset_tasks_video(
+    video_id: int = Form(...),
+    db: Session = Depends(session.get_db)
+):
+    """
+    Force delete ALL tasks for a video (Pure SQL Delete).
+    """
+    try:
+        print(f"Force Reset: Deleting all tasks for video {video_id} (Pure SQL)...")
+        
+        db.query(models.Task).filter(
+            models.Task.video_id == video_id
         ).delete(synchronize_session=False)
         
         db.commit()
@@ -119,6 +163,28 @@ async def force_reset_tasks(
         print(f"Force Reset Failed: {e}")
         db.rollback()
         return JSONResponse({"detail": str(e)}, status_code=500)
+
+@router.get("/api/tasks/active")
+async def get_active_tasks(db: Session = Depends(session.get_db)):
+    """
+    Get all currently running or queued tasks.
+    Used for frontend auto-refresh logic.
+    """
+    tasks = db.query(models.Task).filter(
+        models.Task.status.in_(['queued', 'running'])
+    ).all()
+    
+    result = []
+    for t in tasks:
+        result.append({
+            "id": t.id,
+            "project_id": t.project_id,
+            "status": t.status,
+            "task_type": t.task_type,
+            "created_at": t.created_at.isoformat() if t.created_at else None
+        })
+        
+    return JSONResponse(result)
 
 @router.get("/api/tasks/status")
 async def get_tasks_status(
