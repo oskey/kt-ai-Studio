@@ -5,7 +5,6 @@ __pycache__/
 .Python
 env/
 venv/
-.env
 .DS_Store
 *.db
 kt_ai_studio.db
@@ -17,4 +16,5 @@ output/
 
 # Vercel
 vercel.json
+.vercelignore
 .vercel/
