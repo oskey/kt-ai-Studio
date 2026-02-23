@@ -1,11 +1,14 @@
+from typing import List
 from fastapi import APIRouter, Depends, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.db import crud, session, models
 from pathlib import Path
 import shutil
 import os
+import json
+from pydantic import BaseModel
 from app.config import config
 from app.utils import to_web_path
 
@@ -37,6 +40,41 @@ async def create_project(
         # Simplified error handling
         print(f"Error creating project: {e}")
     return RedirectResponse(url="/projects", status_code=303)
+
+class StoryGenRequest(BaseModel):
+    content: str
+    mode: str = "append"
+    episode_start: int = 1
+    max_characters: int = 5
+    max_scenes: int = 10
+
+@router.post("/projects/{project_id}/auto_generate_story")
+async def auto_generate_story(
+    project_id: int,
+    req: StoryGenRequest,
+    db: Session = Depends(session.get_db)
+):
+    project = crud.get_project(db, project_id)
+    if not project:
+        return JSONResponse({"error": "Project not found"}, status_code=404)
+        
+    task = models.Task(
+        project_id=project.id,
+        task_type="AUTO_GENERATE_STORY",
+        status="queued",
+        payload_json=json.dumps({
+            "content": req.content,
+            "mode": req.mode,
+            "episode_start": req.episode_start,
+            "max_characters": req.max_characters,
+            "max_scenes": req.max_scenes
+        })
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    
+    return {"status": "success", "task_id": task.id}
 
 @router.get("/projects/{project_id}", response_class=HTMLResponse)
 async def view_project(request: Request, project_id: int, db: Session = Depends(session.get_db)):
@@ -86,3 +124,36 @@ async def delete_project(project_id: int, db: Session = Depends(session.get_db))
                 print(f"[Project Deletion] Error deleting directory {project_dir}: {e}")
                 
     return RedirectResponse(url="/projects", status_code=303)
+
+@router.post("/projects/{project_id}/scenes")
+async def create_scene(
+    project_id: int, 
+    name: str = Form(...), 
+    episode: int = Form(...), 
+    shot: int = Form(...), 
+    scene_type: str = Form(...), 
+    base_desc: str = Form(...), 
+    related_players: List[int] = Form([]),
+    db: Session = Depends(session.get_db)
+):
+    # Validate Scene Type
+    valid_types = ["Indoor", "Outdoor", "Special"]
+    normalized_type = scene_type
+    if normalized_type not in valid_types:
+        for vt in valid_types:
+            if normalized_type.lower() == vt.lower():
+                normalized_type = vt
+                break
+        if normalized_type not in valid_types:
+            normalized_type = "Special"
+            
+    crud.create_scene(
+        db, 
+        project_id, 
+        name, 
+        episode, 
+        shot, 
+        normalized_type, 
+        base_desc, 
+        related_players
+    )

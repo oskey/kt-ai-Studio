@@ -642,36 +642,6 @@ def seed_llm_profiles(db: Session):
     if count > 0:
         return
 
-    # If empty, migrate from env
-    from app.config import config
-    
-    # Default to DeepSeek logic if config has values
-    # Or just check if OPENAI_API_KEY is present
-    api_key = config.OPENAI_API_KEY
-    if api_key:
-        print("Seeding default LLM Profile from environment variables...")
-        base_url = config.OPENAI_BASE_URL
-        if not base_url:
-            base_url = "https://api.deepseek.com" # Default fallback
-            
-        model = config.LLM_MODEL
-        if not model:
-            model = "deepseek-chat"
-            
-        profile = models.LLMProfile(
-            name="DeepSeek-Default",
-            provider="deepseek",
-            base_url=base_url,
-            api_key=api_key,
-            model=model,
-            is_default=True
-        )
-        db.add(profile)
-        db.commit()
-    else:
-        # Create a dummy or skip?
-        # User requirement: "若未选择则默认 DeepSeek"
-        # But if no API key, we can't really do much. 
-        # Let's create a placeholder if user wants?
-        # Better to leave empty so user is forced to configure UI or env.
-        pass
+    # No env var seeding anymore.
+    # User must configure via UI.
+    pass

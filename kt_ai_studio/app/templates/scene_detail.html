@@ -14,14 +14,12 @@
         
         <div class="d-flex align-items-center gap-2">
             <span class="text-secondary small">状态:</span>
-            {% if scene.status == 'generated' %}
+            {% if scene.base_image_path and scene.merged_image_path %}
             <span class="badge bg-success-subtle text-success rounded-pill">完成</span>
-            {% elif scene.status == 'draft' %}
+            {% elif not scene.base_image_path %}
             <span class="badge bg-secondary-subtle text-secondary rounded-pill">草稿</span>
-            {% elif scene.status == 'generated_prompt' %}
-            <span class="badge bg-info-subtle text-info-emphasis rounded-pill">已生成 Prompt</span>
             {% else %}
-            <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill">{{ scene.status }}</span>
+            <span class="badge bg-info-subtle text-info-emphasis rounded-pill">进行中</span>
             {% endif %}
         </div>
     </div>
@@ -124,16 +122,16 @@
                                 <div class="row g-2 mb-2">
                                     <div class="col-6">
                                         <label class="text-label x-small text-success">宽</label>
-                                        <input type="number" name="width" value="1024" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
+                                        <input type="number" name="width" value="{{ sys_config.get('scene_gen_width', 1024) }}" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
                                     </div>
                                     <div class="col-6">
                                         <label class="text-label x-small text-success">高</label>
-                                        <input type="number" name="height" value="768" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
+                                        <input type="number" name="height" value="{{ sys_config.get('scene_gen_height', 768) }}" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
                                     </div>
                                 </div>
                                 <div class="mb-2">
                                     <label class="text-label x-small text-success">Seed (0=随机)</label>
-                                    <input type="number" name="seed" value="264590" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
+                                    <input type="number" name="seed" value="{{ sys_config.get('scene_gen_seed', 264590) }}" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
                                 </div>
                                 <button type="submit" class="btn btn-success w-100 btn-sm rounded-pill fw-medium" 
                                         {% if not scene.prompt_pos or is_generating %}disabled{% endif %}>
@@ -185,6 +183,7 @@
                                     <div class="fw-medium text-dark" style="font-size: 0.9rem;">
                                         {% if task.task_type == 'GEN_SCENE_PROMPT' %}生成提示词
                                         {% elif task.task_type == 'GEN_SCENE_BASE' %}生成场景图
+                                        {% elif task.task_type == 'SCENE_MERGE' %}场景合成
                                         {% else %}{{ task.task_type }}{% endif %}
                                     </div>
                                     {% if task.error %}
@@ -224,23 +223,130 @@
             <!-- Base Image -->
             <div class="card mb-4">
                 <div class="card-header bg-white border-bottom-0 pt-3 pb-0">
-                    <h6 class="fw-bold mb-0"><i class="bi bi-image me-2 text-primary"></i>场景图 (Base Image)</h6>
+                    <h6 class="fw-bold mb-0"><i class="bi bi-image me-2 text-primary"></i>生成结果</h6>
                 </div>
                 <div class="card-body">
-                    <div class="bg-light rounded-4 overflow-hidden d-flex align-items-center justify-content-center" style="min-height: 400px; border: 2px dashed #e2e8f0;">
-                        {% if scene.base_image_path %}
-                        <img src="/{{ scene.base_image_path }}?v={{ request.query_params.get('t', 0) }}" class="img-fluid" style="max-height: 600px;">
-                        {% else %}
-                        <div class="text-center text-muted">
-                            <i class="bi bi-image display-4 mb-2 d-block opacity-25"></i>
-                            <span class="small">暂无场景图</span>
+                    <div class="row">
+                        <!-- Base Image -->
+                        <div class="col-md-6 mb-3">
+                            <h6 class="fw-bold mb-3">场景基图</h6>
+                            {% if scene.base_image_path %}
+                            <div class="position-relative group-hover-trigger">
+                                <img src="{{ to_web_path(scene.base_image_path) }}" class="img-fluid rounded-3 shadow-sm w-100 cursor-pointer" onclick="showPreview(this.src)">
+                                <span class="position-absolute bottom-0 end-0 badge bg-dark bg-opacity-75 m-2">Base</span>
+                            </div>
+                            {% else %}
+                            <div class="bg-light rounded-3 d-flex align-items-center justify-content-center text-secondary" style="height: 300px;">
+                                <div class="text-center">
+                                    <i class="bi bi-image fs-1 mb-2"></i>
+                                    <p class="small">暂无基图</p>
+                                </div>
+                            </div>
+                            {% endif %}
                         </div>
-                        {% endif %}
+
+                        <!-- Merged Image -->
+                        <div class="col-md-6 mb-3" id="merge-result-container">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold mb-0">合成结果 (Merge)</h6>
+                                {% if scene.base_image_path %}
+                                    {% if all_players_ready %}
+                                    <button id="btn-scene-merge" class="btn btn-sm btn-outline-primary rounded-pill px-3" onclick="startSceneMerge()">
+                                        <i class="bi bi-layers-half me-1"></i>合并角色
+                                    </button>
+                                    {% else %}
+                                    <span class="d-inline-block" tabindex="0" data-bs-toggle="tooltip" title="所有关联角色的8镜图生成完毕后才可合并">
+                                        <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" disabled>
+                                            <i class="bi bi-layers-half me-1"></i>合并角色
+                                        </button>
+                                    </span>
+                                    {% endif %}
+                                {% endif %}
+                            </div>
+                            
+                            <!-- Merge Progress (Moved to Modal) -->
+                            
+                            <!-- Start Scene Merge Form (with Seed) -->
+                            <div class="mb-3">
+                                 <label class="text-label x-small text-primary">Seed (0=随机)</label>
+                                 <input type="number" id="merge_seed_input" value="{{ sys_config.get('scene_gen_seed', 264590) }}" class="form-control form-control-sm border-primary-subtle">
+                            </div>
+
+                            {% if scene.merged_image_path %}
+                            <div class="position-relative group-hover-trigger">
+                                <img src="{{ to_web_path(scene.merged_image_path) }}" class="img-fluid rounded-3 shadow-sm w-100 cursor-pointer border border-primary" onclick="showPreview(this.src)">
+                                <span class="position-absolute bottom-0 end-0 badge bg-primary m-2">Merged</span>
+                            </div>
+                            {% else %}
+                            <div class="bg-light rounded-3 d-flex align-items-center justify-content-center text-secondary" style="height: 300px; border: 2px dashed #dee2e6;">
+                                <div class="text-center">
+                                    <i class="bi bi-layers fs-1 mb-2"></i>
+                                    <p class="small">等待合成</p>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
+
+<!-- Scene Merge Modal (Blocking) -->
+<div class="modal fade" id="sceneMergeModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom-0 pb-0">
+        <h5 class="modal-title fw-bold text-primary"><i class="bi bi-layers-half me-2"></i>场景合成</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="merge-modal-close-btn"></button>
+      </div>
+      <div class="modal-body pt-3">
+        <!-- Running UI -->
+        <div id="merge-modal-running-ui">
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+                <h6 class="fw-bold" id="merge-modal-status-text">正在初始化...</h6>
+                <div class="progress mt-3 mb-2" style="height: 6px;">
+                    <div id="merge-modal-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                </div>
+                <p class="text-muted small" id="merge-modal-detail-text">正在提交任务...</p>
+                <button class="btn btn-outline-danger btn-sm rounded-pill mt-3" onclick="interruptMergeFlow()">
+                    <i class="bi bi-stop-circle me-1"></i>停止执行
+                </button>
+            </div>
+        </div>
+
+        <!-- Error UI -->
+        <div id="merge-modal-error-ui" style="display:none;">
+            <div class="alert alert-danger border-0">
+                <div class="d-flex">
+                    <i class="bi bi-x-circle-fill me-2 fs-4"></i>
+                    <div>
+                        <h6 class="fw-bold mb-1">合成失败</h6>
+                        <div id="merge-modal-error-msg" class="small"></div>
+                    </div>
+                </div>
+            </div>
+             <div class="text-center mt-3">
+                 <button class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+
+        <!-- Success UI -->
+        <div id="merge-modal-success-ui" style="display:none;">
+            <div class="text-center py-4 text-success">
+                <i class="bi bi-check-circle-fill display-4 mb-3"></i>
+                <h6 class="fw-bold">合成完成！</h6>
+                <p class="text-muted small">您可以现在查看生成的结果了。</p>
+                 <div class="text-center mt-3">
+                     <button class="btn btn-primary rounded-pill px-4" data-bs-dismiss="modal" onclick="window.location.reload()">查看结果</button>
+                </div>
+            </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- One Click Modal -->
@@ -363,13 +469,14 @@
      style="display:none;"></div>
 
 <script>
-let oneClickModal, forceResetModal, forceInterruptModal;
+let oneClickModal, forceResetModal, forceInterruptModal, sceneMergeModal;
 
 document.addEventListener('DOMContentLoaded', () => {
     checkTaskStatus();
     oneClickModal = new bootstrap.Modal(document.getElementById('oneClickModal'));
     forceResetModal = new bootstrap.Modal(document.getElementById('forceResetModal'));
     forceInterruptModal = new bootstrap.Modal(document.getElementById('forceInterruptModal'));
+    sceneMergeModal = new bootstrap.Modal(document.getElementById('sceneMergeModal'));
 });
 
 function showOneClickModal() {
@@ -558,20 +665,134 @@ async function submitTask(taskType) {
     return null;
 }
 
-async function findLatestTask(taskType) {
+
+
+async function startSceneMerge() {
+    // UI Elements
+    const runningUI = document.getElementById('merge-modal-running-ui');
+    const errorUI = document.getElementById('merge-modal-error-ui');
+    const successUI = document.getElementById('merge-modal-success-ui');
+    const statusText = document.getElementById('merge-modal-status-text');
+    const detailText = document.getElementById('merge-modal-detail-text');
+    const progressBar = document.getElementById('merge-modal-progress-bar');
+    const errorMsg = document.getElementById('merge-modal-error-msg');
+    
+    // Reset UI State
+    runningUI.style.display = 'block';
+    errorUI.style.display = 'none';
+    successUI.style.display = 'none';
+    statusText.innerText = "正在初始化...";
+    detailText.innerText = "正在提交任务...";
+    progressBar.style.width = "0%";
+    
+    // Show Modal
+    sceneMergeModal.show();
+    
+    // Disable Button
+    const mergeBtn = document.getElementById('btn-scene-merge');
+    if (mergeBtn) mergeBtn.disabled = true;
+
+    try {
+        const formData = new FormData();
+        const seedInput = document.getElementById('merge_seed_input');
+        if (seedInput) {
+             formData.append('seed', seedInput.value);
+        }
+        
+        const response = await fetch(`/scenes/{{ scene.id }}/merge`, { method: 'POST', body: formData });
+        const data = await response.json();
+        
+        if (data.status === 'success' || data.status === 'running') {
+            const taskId = data.task_id;
+            let errorCount = 0;
+            
+            // Start Polling Loop
+            const check = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/tasks/status?task_ids=${taskId}&_t=${new Date().getTime()}`);
+                    const statusData = await res.json();
+                    const task = statusData[taskId];
+                    
+                    if (task) {
+                        progressBar.style.width = `${task.progress}%`;
+                        
+                        if (task.status === 'running' || task.status === 'queued') {
+                            errorCount = 0; // Reset error count on successful fetch
+                            
+                            if (task.status === 'queued') {
+                                statusText.innerText = "任务排队中...";
+                            } else {
+                                statusText.innerText = "正在合成...";
+                                // Try to show detailed status if available
+                                if (task.result_json) {
+                                    try {
+                                        const result = (typeof task.result_json === 'string') ? JSON.parse(task.result_json) : task.result_json;
+                                        if (result.status_message) {
+                                            statusText.innerText = result.status_message;
+                                        }
+                                    } catch(e) {}
+                                }
+                            }
+                            detailText.innerText = `进度: ${task.progress}%`;
+                            
+                        } else if (task.status === 'done') {
+                            clearInterval(check);
+                            runningUI.style.display = 'none';
+                            successUI.style.display = 'block';
+                            // Success - wait for user to click "View Result" (reload)
+                            
+                        } else if (task.status === 'failed') {
+                            clearInterval(check);
+                            throw new Error(task.error || "任务失败");
+                        }
+                    }
+                } catch(e) {
+                    console.error("Poll error", e);
+                    errorCount++;
+                    if (errorCount > 10) { // 10 consecutive errors
+                         clearInterval(check);
+                         throw new Error("网络连接中断，请刷新页面查看进度");
+                    }
+                }
+            }, 1000);
+            
+        } else {
+            throw new Error(data.error || "启动失败");
+        }
+    } catch(e) {
+        console.error(e);
+        runningUI.style.display = 'none';
+        errorUI.style.display = 'block';
+        if (errorMsg) errorMsg.innerText = e.message;
+        
+        // Re-enable button so they can try again if they close the modal
+        if (mergeBtn) mergeBtn.disabled = false;
+    }
+}
+
+async function interruptMergeFlow() {
+    if(confirm("确定要停止合成吗？")) {
+        try {
+            await fetch('/tasks/interrupt', { method: 'POST' });
+        } catch(e) { console.error(e); }
+    }
+}
+
+    async function findLatestTask(taskType) {
     await updatePageContent();
     const listItems = document.querySelectorAll('.list-group-item');
-    if (listItems.length > 0) {
-        const firstItem = listItems[0];
-        const id = firstItem.id.replace('task-', '');
-        const typeText = firstItem.querySelector('.fw-medium').innerText;
-        
-        let typeMatch = false;
-        if (taskType === 'GEN_SCENE_PROMPT' && typeText.includes('生成提示词')) typeMatch = true;
-        if (taskType === 'GEN_SCENE_BASE' && typeText.includes('生成场景图')) typeMatch = true;
-        
-        if (typeMatch) return id;
-    }
+        if (listItems.length > 0) {
+            const firstItem = listItems[0];
+            const id = firstItem.id.replace('task-', '');
+            const typeText = firstItem.querySelector('.fw-medium').innerText;
+            
+            let typeMatch = false;
+            if (taskType === 'GEN_SCENE_PROMPT' && typeText.includes('生成提示词')) typeMatch = true;
+            if (taskType === 'GEN_SCENE_BASE' && typeText.includes('生成场景图')) typeMatch = true;
+            if (taskType === 'SCENE_MERGE' && (typeText.includes('SCENE_MERGE') || typeText.includes('场景合成'))) typeMatch = true;
+            
+            if (typeMatch) return id;
+        }
     return null;
 }
 
@@ -660,6 +881,7 @@ function checkTaskStatus() {
                             }
                         }
                     }
+
                     taskStatusCache[taskId] = status;
                 }
                 
@@ -701,6 +923,13 @@ async function updatePageContent() {
             checkTaskStatus(); 
         }
         
+        // Ensure Merge Button stays disabled if modal is open
+        const modal = document.getElementById('sceneMergeModal');
+        if (modal && modal.classList.contains('show')) {
+             const btn = document.getElementById('btn-scene-merge');
+             if(btn) btn.disabled = true;
+        }
+
         const hasRunningTasks = newRunningData.getAttribute('data-task-ids').trim().length > 0;
         if (!hasRunningTasks) {
              document.querySelectorAll('input, button').forEach(el => el.disabled = false);

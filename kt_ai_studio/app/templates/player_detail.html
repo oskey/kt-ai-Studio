@@ -126,16 +126,16 @@
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
                                     <label class="text-label x-small text-success">宽</label>
-                                    <input type="number" id="base_width" value="1024" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
+                                    <input type="number" id="base_width" value="{{ sys_config.get('player_gen_width', 1024) }}" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
                                 </div>
                                 <div class="col-6">
                                     <label class="text-label x-small text-success">高</label>
-                                    <input type="number" id="base_height" value="768" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
+                                    <input type="number" id="base_height" value="{{ sys_config.get('player_gen_height', 768) }}" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
                                 </div>
                             </div>
                             <div class="mb-2">
                                 <label class="text-label x-small text-success">Seed (0=随机)</label>
-                                <input type="number" id="base_seed" value="264590" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
+                                <input type="number" id="base_seed" value="{{ sys_config.get('player_gen_seed', 264590) }}" class="form-control form-control-sm border-success-subtle" {% if is_generating %}disabled{% endif %}>
                             </div>
                             <button type="button" class="btn btn-success w-100 btn-sm rounded-pill fw-medium" 
                                     {% if is_generating %}disabled{% endif %}

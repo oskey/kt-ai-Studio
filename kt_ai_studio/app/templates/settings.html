@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid px-4 py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h4 class="fw-bold mb-1">系统设置 (System Settings)</h4>
+            <p class="text-secondary mb-0">配置全局默认参数，对新创建的任务生效。</p>
+        </div>
+    </div>
+
+    <form method="POST" action="/settings/update">
+        <div class="row g-4">
+            <!-- Player Generation Settings -->
+            <div class="col-12">
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-header bg-white border-bottom-0 pt-4 px-4 pb-0">
+                        <div class="d-flex align-items-center mb-2">
+                            <div class="icon-square bg-primary bg-opacity-10 text-primary rounded-3 me-3">
+                                <i class="bi bi-person-bounding-box fs-4"></i>
+                            </div>
+                            <h5 class="fw-bold mb-0">人物生成默认值</h5>
+                        </div>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label text-secondary small fw-bold">默认宽度 (Width)</label>
+                                <input type="number" name="player_gen_width" class="form-control bg-light border-0" value="{{ config.get('player_gen_width', 1024) }}" required>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label text-secondary small fw-bold">默认高度 (Height)</label>
+                                <input type="number" name="player_gen_height" class="form-control bg-light border-0" value="{{ config.get('player_gen_height', 768) }}" required>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label text-secondary small fw-bold">默认随机种子 (Seed)</label>
+                                <input type="number" name="player_gen_seed" class="form-control bg-light border-0" value="{{ config.get('player_gen_seed', 264590) }}" required>
+                                <div class="form-text mt-1">固定种子可确保不同批次的一致性，设为 -1 则随机。</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Scene Generation Settings -->
+            <div class="col-12">
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-header bg-white border-bottom-0 pt-4 px-4 pb-0">
+                        <div class="d-flex align-items-center mb-2">
+                            <div class="icon-square bg-success bg-opacity-10 text-success rounded-3 me-3">
+                                <i class="bi bi-image fs-4"></i>
+                            </div>
+                            <h5 class="fw-bold mb-0">场景生成默认值</h5>
+                        </div>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label text-secondary small fw-bold">默认宽度 (Width)</label>
+                                <input type="number" name="scene_gen_width" class="form-control bg-light border-0" value="{{ config.get('scene_gen_width', 1024) }}" required>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label text-secondary small fw-bold">默认高度 (Height)</label>
+                                <input type="number" name="scene_gen_height" class="form-control bg-light border-0" value="{{ config.get('scene_gen_height', 768) }}" required>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label text-secondary small fw-bold">默认随机种子 (Seed)</label>
+                                <input type="number" name="scene_gen_seed" class="form-control bg-light border-0" value="{{ config.get('scene_gen_seed', 264590) }}" required>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Bar -->
+        <div class="d-flex justify-content-end mt-4">
+            <button type="submit" class="btn btn-primary rounded-pill px-5 py-2 fw-bold shadow-sm">
+                <i class="bi bi-save me-2"></i>保存设置
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

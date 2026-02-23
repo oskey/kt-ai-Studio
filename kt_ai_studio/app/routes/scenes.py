@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.db import crud, session, models
@@ -74,43 +74,77 @@ async def view_scene(request: Request, scene_id: int, db: Session = Depends(sess
 
     is_generating = any(task.status in ['queued', 'running'] for task in tasks)
     
+    # Fetch System Config for Defaults
+    sys_configs = db.query(models.SystemConfig).all()
+    sys_conf_dict = {c.key: c.value for c in sys_configs}
+
+    # Check if all related players are ready (status == 'done')
+    all_players_ready = True
+    for p in scene.related_players:
+        if p.status != 'done':
+            all_players_ready = False
+            break
+
     return templates.TemplateResponse("scene_detail.html", {
         "request": request, 
         "scene": scene, 
         "tasks": tasks,
         "is_generating": is_generating,
-        "openai_configured": bool(config.OPENAI_API_KEY and not config.OPENAI_API_KEY.startswith("sk-..."))
+        "openai_configured": db.query(models.LLMProfile).count() > 0,
+        "sys_config": sys_conf_dict,
+        "all_players_ready": all_players_ready
     })
 
 @router.post("/scenes/{scene_id}/update")
 async def update_scene(
     scene_id: int, 
-    name: str = Form(...),
-    scene_type: str = Form(...),
-    base_desc: str = Form(...),
+    name: str = Form(...), 
     episode: int = Form(...),
     shot: int = Form(...),
+    scene_type: str = Form(...),
+    base_desc: str = Form(...),
     related_players: list[int] = Form([]),
     db: Session = Depends(session.get_db)
 ):
     scene = crud.get_scene(db, scene_id)
     if scene:
         scene.name = name
-        scene.scene_type = scene_type
-        scene.base_desc = base_desc
         scene.episode = episode
         scene.shot = shot
         
-        # Update related players
-        if related_players:
-            players = db.query(models.Player).filter(models.Player.id.in_(related_players)).all()
-            scene.related_players = players
+        # Validate Scene Type
+        valid_types = ["Indoor", "Outdoor", "Special"]
+        normalized_type = scene_type
+        
+        # Exact match check
+        if normalized_type in valid_types:
+            scene.scene_type = normalized_type
         else:
-            scene.related_players = []
+            # Case-insensitive check
+            found = False
+            for vt in valid_types:
+                if normalized_type.lower() == vt.lower():
+                    scene.scene_type = vt
+                    found = True
+                    break
+            # Fallback
+            if not found:
+                scene.scene_type = "Special"
+        
+        scene.base_desc = base_desc
+        
+        # Update Related Players
+        # Clear existing links
+        db.query(models.ScenePlayerLink).filter(models.ScenePlayerLink.scene_id == scene.id).delete()
+        
+        # Add new links
+        for pid in related_players:
+            link = models.ScenePlayerLink(scene_id=scene.id, player_id=pid)
+            db.add(link)
             
         db.commit()
-        return RedirectResponse(url=f"/projects/{scene.project_id}", status_code=303)
-    return RedirectResponse(url="/projects", status_code=303)
+        
+    return RedirectResponse(url=f"/projects/{scene.project_id}", status_code=303)
 
 @router.post("/scenes/{scene_id}/update_prompts")
 async def update_scene_prompts(
@@ -161,35 +195,131 @@ async def gen_scene_base(
 async def clear_scene_files(scene_id: int, db: Session = Depends(session.get_db)):
     """
     Physically deletes all generated files for a scene and resets its status.
-    Clears prompts, scene_desc, and base_image_path (Full Reset).
+    Clears prompts, scene_desc, base_image_path, AND merged_image_path (Full Reset).
     """
     import os
     import shutil
     from app.config import config
     
     scene = crud.get_scene(db, scene_id)
-    if scene:
-        project_code = scene.project.project_code
-        scene_folder_name = f"{scene.id}_{scene.name}"
-        scene_dir = os.path.join(config.OUTPUT_DIR, project_code, "scenes", scene_folder_name)
-        
-        # Physical Deletion
+    if not scene:
+        return JSONResponse({"error": "Scene not found"}, status_code=404)
+
+    project_code = scene.project.project_code
+    # Logic: Scene files are stored in output/project/scenes/{id}_{name}/...
+    # The 'base_image' is usually inside 'base' folder
+    # The 'merged_image' is usually inside 'merge' folder
+    
+    # We can just delete the entire scene folder?
+    # Yes, typically scene folder structure is:
+    # output/project/scenes/{id}_{name}/base/
+    # output/project/scenes/{id}_{name}/merge/
+    
+    # Wait, where does ComfyRunner save them?
+    # ComfyRunner usually saves based on task ID or project structure.
+    # Let's check ComfyRunner or manager.py logic.
+    # manager.py: current_img_path = os.path.join(base_dir, scene.base_image_path)
+    # The path usually contains the folder structure.
+    
+    # If we assume standard structure, we can try to delete the scene specific folder.
+    # But ComfyUI output filename prefix logic:
+    # Base: f"{task.id}_scene_base" -> Default Comfy output dir?
+    # Wait, ComfyRunner saves to default output unless moved?
+    # If using 'Save Image' node with prefix, it saves to ComfyUI/output/prefix_...
+    # KT-AI-Studio might need to move them or just reference them.
+    
+    # If we are deleting, we should try to delete the file referenced in DB.
+    
+    # 1. Delete Base Image
+    if scene.base_image_path:
+        try:
+            # Construct absolute path
+            # base_image_path is relative "output/..."
+            abs_path = os.path.abspath(os.path.join(config.PROJECT_ROOT, "..", scene.base_image_path))
+            if os.path.exists(abs_path):
+                os.remove(abs_path)
+                print(f"[Clear Files] Deleted base image: {abs_path}")
+        except Exception as e:
+            print(f"[Clear Files] Error deleting base image: {e}")
+
+    # 2. Delete Merged Image
+    if scene.merged_image_path:
+        try:
+            abs_path = os.path.abspath(os.path.join(config.PROJECT_ROOT, "..", scene.merged_image_path))
+            if os.path.exists(abs_path):
+                os.remove(abs_path)
+                print(f"[Clear Files] Deleted merged image: {abs_path}")
+        except Exception as e:
+            print(f"[Clear Files] Error deleting merged image: {e}")
+
+    # 3. Try to delete Scene Directory if it exists (for organized storage)
+    # output/project_code/scenes/{id}_{name}
+    try:
+        scene_dir_name = f"{scene.id}_{scene.name}"
+        # We need to guess where it is relative to output.
+        # Usually: output/project_code/scenes/...
+        scene_dir = os.path.join(config.OUTPUT_DIR, project_code, "scenes", scene_dir_name)
         if os.path.exists(scene_dir):
-            try:
-                shutil.rmtree(scene_dir)
-                print(f"[Clear Files] Deleted directory: {scene_dir}")
-            except Exception as e:
-                print(f"[Clear Files] Failed to delete directory {scene_dir}: {e}")
-                
-        # Reset Scene State (Clear Prompts Too)
-        scene.base_image_path = None
-        scene.prompt_pos = ""
-        scene.prompt_neg = ""
-        scene.scene_desc = ""
-        scene.status = "draft"
-        db.commit()
+            shutil.rmtree(scene_dir)
+            print(f"[Clear Files] Deleted scene directory: {scene_dir}")
+    except Exception as e:
+         pass
+
+    # Reset Scene State (Clear Prompts + Merged Fields)
+    scene.base_image_path = None
+    scene.merged_image_path = None
+    scene.merged_prompts_json = None
+    scene.video_llm_context = None
+    
+    scene.prompt_pos = ""
+    scene.prompt_neg = ""
+    scene.scene_desc = ""
+    scene.status = "draft"
+    
+    db.commit()
         
     return RedirectResponse(url=f"/scenes/{scene_id}", status_code=303)
+
+@router.post("/scenes/{scene_id}/merge")
+async def start_scene_merge(
+    scene_id: int, 
+    seed: int = Form(0),
+    db: Session = Depends(session.get_db)
+):
+    from fastapi.responses import JSONResponse
+    scene = crud.get_scene(db, scene_id)
+    if not scene:
+        return JSONResponse({"error": "Scene not found"}, status_code=404)
+        
+    if not scene.base_image_path:
+        return JSONResponse({"error": "Scene base image not ready"}, status_code=400)
+        
+    # Check if task already running
+    existing_task = db.query(models.Task).filter(
+        models.Task.scene_id == scene.id,
+        models.Task.task_type == "SCENE_MERGE",
+        models.Task.status.in_(["queued", "running"])
+    ).first()
+    
+    if existing_task:
+        return JSONResponse({"status": "running", "task_id": existing_task.id})
+        
+    # Create new task
+    payload = {
+        "seed": seed
+    }
+    
+    task = models.Task(
+        project_id=scene.project_id,
+        scene_id=scene.id,
+        task_type="SCENE_MERGE",
+        status="queued",
+        payload_json=json.dumps(payload)
+    )
+    db.add(task)
+    db.commit()
+    
+    return JSONResponse({"status": "success", "task_id": task.id})
 
 @router.post("/scenes/{scene_id}/delete")
 async def delete_scene(scene_id: int, db: Session = Depends(session.get_db)):
@@ -215,3 +345,15 @@ async def delete_scene(scene_id: int, db: Session = Depends(session.get_db)):
         crud.delete_scene(db, scene_id)
         return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
     return RedirectResponse(url="/projects", status_code=303)
+
+@router.get("/scenes/{scene_id}/video_context")
+async def get_video_context(scene_id: int, db: Session = Depends(session.get_db)):
+    scene = crud.get_scene(db, scene_id)
+    if not scene:
+        return JSONResponse({"error": "Scene not found"}, status_code=404)
+        
+    try:
+        context = json.loads(scene.video_llm_context) if scene.video_llm_context else None
+        return JSONResponse({"status": "success", "context": context})
+    except:
+        return JSONResponse({"status": "error", "context": None})

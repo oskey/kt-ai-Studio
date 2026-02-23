@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid px-4 h-100 d-flex flex-column" style="height: calc(100vh - 140px);">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4 class="fw-bold mb-0"><i class="bi bi-terminal me-2 text-primary"></i>系统日志</h4>
+        <div class="d-flex align-items-center gap-2">
+             <div class="form-check form-switch me-2">
+                <input class="form-check-input" type="checkbox" id="autoScrollSwitch" checked>
+                <label class="form-check-label small text-secondary" for="autoScrollSwitch">自动滚动</label>
+            </div>
+            <button class="btn btn-sm btn-outline-danger rounded-pill px-3" onclick="confirmStopAll()">
+                <i class="bi bi-stop-circle-fill me-1"></i>一键停止所有任务
+            </button>
+            <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="clearConsole()">
+                <i class="bi bi-eraser me-1"></i>清空显示
+            </button>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm flex-grow-1 mb-4" style="background-color: #1e1e1e; min-height: 600px; border-radius: 8px; overflow: hidden;">
+        <div class="card-header border-bottom border-secondary border-opacity-25 py-2 d-flex align-items-center" style="background-color: #252526;">
+            <div class="d-flex gap-2 me-auto">
+                <div class="rounded-circle bg-danger" style="width: 12px; height: 12px;"></div>
+                <div class="rounded-circle bg-warning" style="width: 12px; height: 12px;"></div>
+                <div class="rounded-circle bg-success" style="width: 12px; height: 12px;"></div>
+            </div>
+            <span class="text-secondary small font-monospace user-select-none">kt-ai-studio ~ system.log --watch</span>
+        </div>
+        <div class="card-body p-0 position-relative">
+            <div id="log-console" 
+         class="position-absolute top-0 start-0 w-100 h-100 overflow-auto p-3 font-monospace" 
+         style="color: #cccccc; font-size: 0.9rem; white-space: pre-wrap; font-family: 'Consolas', 'Monaco', 'Courier New', monospace;"
+         data-last-id="{{ logs[0].id if logs and logs|length > 0 else 0 }}">
+        <!-- Logs will be injected here -->
+        {% for log in logs|reverse %}
+        <div class="log-line mb-1" data-id="{{ log.id }}">
+                    <span class="text-secondary" style="color: #6c757d !important;">[{{ format_timestamp(log.timestamp) }}]</span>
+                    <span class="fw-bold" style="color: #4ec9b0;">{{ log.module }}</span>
+                    {% if log.progress_info %}<span class="text-warning">{{ log.progress_info }}</span>{% endif %}
+                    <span style="color: #ce9178;">{{ log.content }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Confirmation Modal (Local or Global? We can inject a simple one or use standard confirm for now if simple, but user asked for nice UI) -->
+<!-- We can assume base.html has bootstrap JS. Let's reuse the modal structure from project_detail if we can, or just add one here. -->
+<div class="modal fade" id="stopAllModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-body p-4 text-center">
+                <div class="bg-danger-subtle text-danger rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 64px; height: 64px;">
+                    <i class="bi bi-exclamation-triangle-fill fs-2"></i>
+                </div>
+                <h5 class="fw-bold mb-2">确认停止所有任务？</h5>
+                <p class="text-secondary mb-4">
+                    此操作将强制终止后台所有正在运行和排队的任务，<br>并重置任务状态。此操作不可撤销。
+                </p>
+                <div class="d-flex justify-content-center gap-3">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-danger rounded-pill px-4" onclick="executeStopAll()">确认停止</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const consoleDiv = document.getElementById('log-console');
+    const autoScrollSwitch = document.getElementById('autoScrollSwitch');
+    let lastLogId = Number(consoleDiv.dataset.lastId || 0);
+    
+    function confirmStopAll() {
+        var modal = new bootstrap.Modal(document.getElementById('stopAllModal'));
+        modal.show();
+    }
+    
+    async function executeStopAll() {
+        // Hide modal
+        bootstrap.Modal.getInstance(document.getElementById('stopAllModal')).hide();
+        
+        try {
+            const res = await fetch('/tasks/stop_all', { method: 'POST' });
+            const data = await res.json();
+            if(data.status === 'success') {
+                // We don't need alert, the log will show up
+                // manually append a log just in case
+                appendLog({
+                    id: lastLogId + 1,
+                    timestamp: new Date().toLocaleString(),
+                    module: 'System',
+                    progress_info: 'SUCCESS',
+                    content: `已成功停止 ${data.count} 个任务。`,
+                    level: 'INFO'
+                });
+            } else {
+                alert("停止失败: " + data.message);
+            }
+        } catch(e) {
+            console.error(e);
+            alert("请求失败");
+        }
+    }
+
+    function scrollToBottom() {
+        if (autoScrollSwitch.checked) {
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+    }
+    
+    // Initial scroll
+    scrollToBottom();
+
+    function appendLog(log) {
+        const div = document.createElement('div');
+        div.className = 'log-line mb-1';
+        div.setAttribute('data-id', log.id);
+        
+        // Improved Color Scheme
+        let contentColor = '#ce9178'; // Default string color (VSCode style)
+        if (log.level === 'ERROR') contentColor = '#f48771'; // Reddish
+        if (log.level === 'WARNING') contentColor = '#cca700'; // Yellowish
+        if (log.level === 'INFO') contentColor = '#9cdcfe'; // Blueish
+        
+        div.innerHTML = `
+            <span style="color: #6c757d;">[${log.timestamp}]</span>
+            <span class="fw-bold" style="color: #4ec9b0;">${log.module}</span>
+            ${log.progress_info ? `<span class="text-warning">${log.progress_info}</span>` : ''}
+            <span style="color: ${contentColor};">${log.content}</span>
+        `;
+        
+        consoleDiv.appendChild(div);
+        lastLogId = Math.max(lastLogId, log.id);
+    }
+
+    function clearConsole() {
+        consoleDiv.innerHTML = '';
+        // Don't reset lastLogId, we just clear display
+    }
+
+    // Poll for new logs
+    setInterval(async () => {
+        try {
+            const res = await fetch(`/api/system/logs?last_id=${lastLogId}`);
+            const newLogs = await res.json();
+            
+            if (newLogs.length > 0) {
+                newLogs.forEach(log => appendLog(log));
+                scrollToBottom();
+            }
+        } catch(e) {
+            console.error("Poll logs failed", e);
+        }
+    }, 2000);
+</script>
+
+<style>
+    .log-line {
+        line-height: 1.4;
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+        padding-bottom: 2px;
+    }
+    .log-line:hover {
+        background-color: rgba(255,255,255,0.05);
+    }
+    
+    /* Scrollbar styling */
+    #log-console::-webkit-scrollbar {
+        width: 10px;
+    }
+    #log-console::-webkit-scrollbar-track {
+        background: #1e1e1e; 
+    }
+    #log-console::-webkit-scrollbar-thumb {
+        background: #424242; 
+        border-radius: 5px;
+    }
+    #log-console::-webkit-scrollbar-thumb:hover {
+        background: #555; 
+    }
+</style>
+{% endblock %}

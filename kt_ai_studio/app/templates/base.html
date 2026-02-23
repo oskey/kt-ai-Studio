@@ -14,6 +14,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', path='/main.css') }}">
+    {% block styles %}{% endblock %}
 </head>
 <body class="d-flex flex-column min-vh-100">
     <!-- Navigation (App Header Style) -->
@@ -48,6 +49,16 @@
                     <li class="nav-item">
                         <a class="nav-link rounded-2 px-3 {% if 'settings/llm' in request.url.path %}active bg-light{% endif %}" href="/settings/llm">
                             <i class="bi bi-cpu me-1"></i>LLM 引擎
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link rounded-2 px-3 {% if 'system/logs' in request.url.path %}active bg-light{% endif %}" href="/system/logs">
+                            <i class="bi bi-terminal me-1"></i>系统日志
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link rounded-2 px-3 {% if request.url.path == '/settings' %}active bg-light{% endif %}" href="/settings">
+                            <i class="bi bi-gear me-1"></i>系统设置
                         </a>
                     </li>
                 </ul>

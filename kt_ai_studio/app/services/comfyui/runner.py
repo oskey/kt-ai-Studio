@@ -107,6 +107,25 @@ class ComfyRunner:
         filename_prefix = f"{task.id}_base"
         set_input("90", "filename_prefix", filename_prefix)
 
+        # --- Debug Logging for ComfyUI API ---
+        print("\n" + "="*60)
+        print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
+        print(f" Workflow File: wf_base_character.json")
+        print("-" * 60)
+        print(" [Node 91] Positive Prompt")
+        print(f"  -> value: {final_pos[:100]}...")
+        print("-" * 30)
+        print(" [Node 92:7] Negative Prompt")
+        print(f"  -> text: {final_neg[:100]}...")
+        print("-" * 30)
+        print(" [Node 92:58] Resolution")
+        print(f"  -> width: {width}, height: {height}")
+        print("-" * 30)
+        print(" [Node 92:3] Sampler")
+        print(f"  -> seed: {seed}")
+        print("="*60 + "\n")
+        # -------------------------------------
+
         # Submit
         print(f"Submitting GEN_BASE task {task.id} to ComfyUI...")
         response = self.client.queue_prompt(workflow)
@@ -231,6 +250,25 @@ class ComfyRunner:
         # 3. SaveImage Prefix
         filename_prefix = f"{task.id}_scene_base"
         set_input("90", "filename_prefix", filename_prefix)
+
+        # --- Debug Logging for ComfyUI API ---
+        print("\n" + "="*60)
+        print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
+        print(f" Workflow File: wf_base_character.json")
+        print("-" * 60)
+        print(" [Node 91] Positive Prompt")
+        print(f"  -> value: {final_pos[:100]}...")
+        print("-" * 30)
+        print(" [Node 92:7] Negative Prompt")
+        print(f"  -> text: {final_neg[:100]}...")
+        print("-" * 30)
+        print(" [Node 92:58] Resolution")
+        print(f"  -> width: {width}, height: {height}")
+        print("-" * 30)
+        print(" [Node 92:3] Sampler")
+        print(f"  -> seed: {seed}")
+        print("="*60 + "\n")
+        # -------------------------------------
 
         # Submit
         print(f"Submitting GEN_SCENE_BASE task {task.id}...")
@@ -399,6 +437,22 @@ class ComfyRunner:
         # 4. Seed (Optional)
         # ALREADY SET ABOVE
         
+        # --- Debug Logging for ComfyUI API ---
+        print("\n" + "="*60)
+        print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
+        print(f" Workflow File: wf_8views.json")
+        print("-" * 60)
+        print(" [Node 25] LoadImage (Base)")
+        print(f"  -> image: {uploaded_filename}")
+        print("-" * 30)
+        print(" [KSamplers] Seed")
+        print(f"  -> seed: {seed}")
+        print("-" * 30)
+        print(" [ImageScalers] Megapixels")
+        print(f"  -> megapixels: {megapixels}")
+        print("="*60 + "\n")
+        # -------------------------------------
+
         # Submit
         print(f"Submitting GEN_8VIEWS task {task.id}...")
         response = self.client.queue_prompt(workflow)
@@ -545,3 +599,132 @@ class ComfyRunner:
                 views_json[view_name] = rel_path
                 
         return {"views_json": views_json}
+
+    def run_scene_merge(self, task, current_img_path, player_img_path, prompt_pos, prompt_neg, seed, callback=None, cancel_check_func=None):
+        """
+        Run Qwen Image Edit for Scene Merge.
+        """
+        workflow = self._load_workflow("qwen_Image_edit_subgraphed.json")
+        
+        # Upload images
+        if not os.path.exists(current_img_path):
+            raise ValueError(f"Scene image not found: {current_img_path}")
+        if not os.path.exists(player_img_path):
+            raise ValueError(f"Player image not found: {player_img_path}")
+            
+        print(f"Uploading scene image {current_img_path}...")
+        resp1 = self.client.upload_image(current_img_path)
+        scene_filename = resp1["name"]
+        
+        print(f"Uploading player image {player_img_path}...")
+        resp2 = self.client.upload_image(player_img_path)
+        player_filename = resp2["name"]
+        
+        def set_input(node_id, field, value):
+            if node_id in workflow:
+                if 'inputs' not in workflow[node_id]:
+                    workflow[node_id]['inputs'] = {}
+                workflow[node_id]['inputs'][field] = value
+            else:
+                print(f"Warning: Node {node_id} not found in workflow")
+        
+        # Node 78: Load Image (Scene / Background)
+        set_input("78", "image", scene_filename)
+        
+        # Node 120: Load Image (Character / Foreground)
+        set_input("120", "image", player_filename)
+        
+        # Node 115: Prompts and Seed
+        set_input("115:111", "prompt", prompt_pos)
+        set_input("115:110", "prompt", prompt_neg)
+        set_input("115:3", "seed", seed)
+        
+        # Node 60: Save Image (Filename Prefix)
+        set_input("60", "filename_prefix", f"scenemerge_{task.id}")
+        
+        # --- Debug Logging for ComfyUI API ---
+        print("\n" + "="*60)
+        print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
+        print(f" Workflow File: qwen_Image_edit_subgraphed.json")
+        print("-" * 60)
+        print(" [Node 78] LoadImage (Scene/Background)")
+        print(f"  -> image: {scene_filename}")
+        print("-" * 30)
+        print(" [Node 120] LoadImage (Character/Foreground)")
+        print(f"  -> image: {player_filename}")
+        print("-" * 30)
+        print(" [Node 115] Qwen Image Edit (Prompts)")
+        print(f"  -> prompt_pos (115:111): {prompt_pos}")
+        print(f"  -> prompt_neg (115:110): {prompt_neg}")
+        print(f"  -> seed (115:3): {seed}")
+        print("="*60 + "\n")
+        # -------------------------------------
+        
+        # Submit
+        print(f"Submitting GEN_SCENE_MERGE task {task.id}...")
+        response = self.client.queue_prompt(workflow)
+        prompt_id = response['prompt_id']
+        
+        # Wait
+        def internal_callback(event, data):
+            if callback:
+                callback(event, data)
+                
+        history = self.client.wait_for_completion(prompt_id, callback=internal_callback, cancel_check_func=cancel_check_func)
+        
+        # Download
+        # Target: output/<project_code>/scenes/<scene_id>_<scene_name>/merge/
+        # However, run_scene_merge is called iteratively.
+        # We need to save separate files for each step or just overwrite?
+        # User requirement: "step_01_{player_id}.png"
+        # We should use a unique filename or folder.
+        
+        # Let's use timestamp or step index if we can pass it.
+        # But here we just save to "merge" folder and let ComfyUI/Client handle filenames.
+        # ComfyUI usually saves as ComfyUI_00001_.png etc.
+        
+        scene = task.scene
+        project_code = task.project.project_code
+        # Sanitize scene name for folder
+        import re
+        safe_scene_name = re.sub(r'[\\/*?:"<>|]', "", scene.name)
+        scene_folder_name = f"{scene.id}_{safe_scene_name}"
+        
+        save_dir = os.path.join(config.OUTPUT_DIR, project_code, "scenes", scene_folder_name, "merge")
+        os.makedirs(save_dir, exist_ok=True)
+        
+        print(f"Downloading outputs to {save_dir}...")
+        results = self.client.download_outputs(history, save_dir)
+        
+        # Cleanup temporary files
+        try:
+            for filename in os.listdir(save_dir):
+                if filename.startswith("ComfyUI_temp_") and filename.endswith(".png"):
+                    file_path = os.path.join(save_dir, filename)
+                    try:
+                        os.remove(file_path)
+                        print(f"Deleted temp file: {filename}")
+                    except OSError as e:
+                        print(f"Error deleting temp file {filename}: {e}")
+        except Exception as e:
+            print(f"Error cleaning up temp files: {e}")
+        
+        # Find result
+        if results:
+            # We expect image from SaveImage node.
+            # results structure: { node_id: [absolute_paths...] }
+            for node_id, paths in results.items():
+                if paths:
+                    # Return the first image found
+                    abs_path = paths[0]
+                    # Return relative path for DB
+                    # config.OUTPUT_DIR is X:\...\output
+                    # abs_path is X:\...\output\...\merge\ComfyUI_xxxxx.png
+                    # rel_path should be output/...\merge\ComfyUI_xxxxx.png
+                    
+                    # Use os.path.relpath based on config.OUTPUT_DIR parent
+                    base_dir = os.path.dirname(config.OUTPUT_DIR)
+                    rel_path = os.path.relpath(abs_path, base_dir).replace("\\", "/")
+                    return {"merge_image_path": rel_path}
+            
+        raise Exception("No image output found for Scene Merge")

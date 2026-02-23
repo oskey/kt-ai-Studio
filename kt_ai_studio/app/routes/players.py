@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, Request, Form, BackgroundTasks
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from app.db import crud, session, models
 from pathlib import Path
+from app.services.tasks.batch import process_batch_gen_base, process_batch_gen_complete
 import json
 
 from app.config import config
@@ -47,8 +48,6 @@ async def delete_player(player_id: int, db: Session = Depends(session.get_db)):
         return RedirectResponse(url=f"/projects/{project_id}", status_code=303)
     return RedirectResponse(url="/projects", status_code=303)
 
-from app.config import config
-
 @router.get("/players/{player_id}", response_class=HTMLResponse)
 async def view_player(request: Request, player_id: int, db: Session = Depends(session.get_db)):
     player = crud.get_player(db, player_id)
@@ -62,12 +61,6 @@ async def view_player(request: Request, player_id: int, db: Session = Depends(se
     local_tz = pytz.timezone(config.APP_TIMEZONE)
     
     for task in tasks:
-        # 1. Convert created_at/started_at to local time for display
-        # Note: We attach a temporary attribute '_started_at_display' to the task object
-        # Python objects from SQLAlchemy allow arbitrary attributes if not strict? 
-        # Actually it's better to format it in Jinja or attach to a dict.
-        # But Jinja accesses object attributes. Let's try to set attribute.
-        
         if task.started_at:
              dt_utc = task.started_at.replace(tzinfo=pytz.utc) if task.started_at.tzinfo is None else task.started_at
              task._started_at_display = dt_utc.astimezone(local_tz).strftime('%H:%M:%S')
@@ -75,12 +68,10 @@ async def view_player(request: Request, player_id: int, db: Session = Depends(se
              dt_utc = task.created_at.replace(tzinfo=pytz.utc) if task.created_at.tzinfo is None else task.created_at
              task._started_at_display = dt_utc.astimezone(local_tz).strftime('%H:%M:%S')
              
-        # 2. Calculate Duration if not present but completed
         if task.status in ['done', 'failed'] and not task.duration and task.started_at and task.completed_at:
              delta = task.completed_at - task.started_at
              task.duration = int(delta.total_seconds())
              
-        # 3. Format Duration string
         if task.duration:
              seconds = task.duration
              if seconds > 60:
@@ -99,14 +90,18 @@ async def view_player(request: Request, player_id: int, db: Session = Depends(se
     # Check if there are any running tasks
     is_generating = any(task.status in ['queued', 'running'] for task in tasks)
             
+    # Fetch System Config for Defaults
+    sys_configs = db.query(models.SystemConfig).all()
+    sys_conf_dict = {c.key: c.value for c in sys_configs}
+    
     return templates.TemplateResponse("player_detail.html", {
         "request": request, 
         "player": player, 
         "tasks": tasks,
         "views": views,
         "is_generating": is_generating,
-        # Check if API Key is configured (and not the default placeholder)
-        "openai_configured": bool(config.OPENAI_API_KEY and not config.OPENAI_API_KEY.startswith("sk-..."))
+        "openai_configured": db.query(models.LLMProfile).count() > 0,
+        "sys_config": sys_conf_dict
     })
 
 @router.post("/players/{player_id}/update_prompts")
@@ -127,19 +122,9 @@ async def clear_player_config(player_id: int, db: Session = Depends(session.get_
     # Physical deletion
     import os
     import shutil
-    from app.config import config
     
     # Delete Base Image
     if old_base:
-        # old_base is relative "output/project/..."
-        # We need absolute path.
-        # config.OUTPUT_DIR is "x:\...\output"
-        # We need to be careful about path joining.
-        # If old_base starts with "output/", we should strip it or join with parent of OUTPUT_DIR?
-        # Actually, in ComfyRunner we did:
-        # rel_path = os.path.relpath(abs_path, os.path.dirname(config.OUTPUT_DIR))
-        # So if we join os.path.dirname(config.OUTPUT_DIR) with old_base, we get abs path.
-        
         abs_base = os.path.join(os.path.dirname(config.OUTPUT_DIR), old_base)
         if os.path.exists(abs_base):
             try:
@@ -149,22 +134,12 @@ async def clear_player_config(player_id: int, db: Session = Depends(session.get_
                 print(f"Error deleting base image: {e}")
                 
     # Delete Views Folder
-    # We can infer the views folder from player structure or just delete the files in views_json.
-    # Usually "output/project/players/{id}_{name}/views"
-    # Let's try to find the player folder.
     player = crud.get_player(db, player_id)
     if player:
         project_code = player.project.project_code
         player_folder_name = f"{player.id}_{player.player_name}"
         player_dir = os.path.join(config.OUTPUT_DIR, project_code, "players", player_folder_name)
         
-        # We can just delete the whole player dir content? 
-        # But maybe we want to keep logs? No, user said "clear config".
-        # "Clear prompts, base, 8views".
-        # Deleting the whole player folder might be too much if we have other stuff.
-        # But usually we just have base and views.
-        
-        # Let's delete "base" and "views" subfolders if they exist.
         base_dir = os.path.join(player_dir, "base")
         views_dir = os.path.join(player_dir, "views")
         
@@ -174,3 +149,29 @@ async def clear_player_config(player_id: int, db: Session = Depends(session.get_
             shutil.rmtree(views_dir, ignore_errors=True)
             
     return RedirectResponse(url=f"/players/{player_id}", status_code=303)
+
+@router.post("/projects/{project_id}/batch_gen_base")
+async def batch_gen_base(
+    project_id: int, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(session.get_db)
+):
+    project = crud.get_project(db, project_id)
+    if not project:
+        return JSONResponse({"error": "Project not found"}, status_code=404)
+        
+    background_tasks.add_task(process_batch_gen_base, project_id)
+    return JSONResponse({"status": "success", "message": "Batch task started. Check System Logs."})
+
+@router.post("/projects/{project_id}/batch_gen_complete")
+async def batch_gen_complete(
+    project_id: int, 
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(session.get_db)
+):
+    project = crud.get_project(db, project_id)
+    if not project:
+        return JSONResponse({"error": "Project not found"}, status_code=404)
+        
+    background_tasks.add_task(process_batch_gen_complete, project_id)
+    return JSONResponse({"status": "success", "message": "Batch task started. Check System Logs."})

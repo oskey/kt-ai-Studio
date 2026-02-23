@@ -169,18 +169,34 @@
        .item-avatar.other { background-color: #f8f9fa; color: #6c757d; }
 
        .list-thumbnail {
-           width: 48px;
-           height: 48px;
+           height: 36px !important;
+           width: 36px !important;
+           min-width: 36px !important;
            object-fit: cover;
-           border-radius: 8px;
+           border-radius: 4px;
            cursor: zoom-in;
-           transition: transform 0.2s;
+           transition: all 0.2s ease;
            border: 1px solid #dee2e6;
            background-color: #f8f9fa;
+           vertical-align: middle;
        }
        .list-thumbnail:hover {
-           transform: scale(1.05);
-           box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+           border-color: #0d6efd;
+           box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.25);
+       }
+       
+       /* Active Tab Style */
+       .nav-pills .nav-link.active {
+           background-color: #fff !important;
+           border: 2px solid #dc3545 !important;
+           color: #000 !important;
+           font-weight: bold;
+           box-shadow: 0 2px 4px rgba(220, 53, 69, 0.1);
+       }
+       .nav-pills .nav-link {
+           color: #6c757d;
+           background-color: #f8f9fa;
+           border: 1px solid transparent;
        }
    </style>
 {% endblock %}
@@ -213,6 +229,15 @@
                     <div class="d-flex align-items-center text-muted small border-top pt-3">
                         <i class="bi bi-calendar3 me-2"></i>
                         创建于 {{ project.created_at.strftime('%Y-%m-%d') }}
+                    </div>
+                    
+                    <div class="d-grid gap-2 mt-4">
+                        <button class="btn btn-outline-primary btn-sm rounded-pill" onclick="triggerBatchGenBase()">
+                            <i class="bi bi-stars me-1"></i>一键生成所有基图
+                        </button>
+                        <button class="btn btn-outline-success btn-sm rounded-pill" onclick="triggerBatchGenComplete()">
+                            <i class="bi bi-person-video2 me-1"></i>一键生成角色完整图
+                        </button>
                     </div>
                 </div>
             </div>
@@ -281,7 +306,7 @@
                             <!-- Actions -->
                             <div class="d-flex align-items-center gap-2">
                                 {% if player.base_image_path %}
-                                <img src="{{ to_web_path(player.base_image_path) }}" class="list-thumbnail" onclick="showPreview(this.src)" title="点击预览" style="width: 48px; height: 48px; object-fit: cover;">
+                                <img src="{{ to_web_path(player.base_image_path) }}" class="list-thumbnail" onclick="showPreview(this.src)" title="点击预览" style="width: 36px; height: 36px; object-fit: cover;">
                                 {% endif %}
                                 <a href="/players/{{ player.id }}" class="btn btn-light btn-sm rounded-pill px-3 fw-medium text-primary bg-indigo-subtle">
                                     管理
@@ -355,16 +380,12 @@
                                                     {{ scene.name }}
                                                 </h6>
                                                 <!-- Status Badge -->
-                                                {% if scene.status == 'draft' %}
+                                                {% if scene.base_image_path and scene.merged_image_path %}
+                                                <span class="badge bg-success-subtle text-success rounded-pill fw-normal" style="font-size: 0.7rem;">完成</span>
+                                                {% elif not scene.base_image_path %}
                                                 <span class="badge bg-secondary-subtle text-secondary rounded-pill fw-normal" style="font-size: 0.7rem;">草稿</span>
-                                                {% elif scene.status == 'generated_prompt' %}
-                                                <span class="badge bg-info-subtle text-info-emphasis rounded-pill fw-normal" style="font-size: 0.7rem;">已生成 Prompt</span>
-                                                {% elif scene.status == 'generated' %}
-                                                <span class="badge bg-success-subtle text-success rounded-pill fw-normal" style="font-size: 0.7rem;">已生成</span>
-                                                {% elif scene.status == 'failed' %}
-                                                <span class="badge bg-danger-subtle text-danger rounded-pill fw-normal" style="font-size: 0.7rem;">失败</span>
                                                 {% else %}
-                                                <span class="badge bg-warning-subtle text-warning-emphasis rounded-pill fw-normal" style="font-size: 0.7rem;">{{ scene.status }}</span>
+                                                <span class="badge bg-info-subtle text-info-emphasis rounded-pill fw-normal" style="font-size: 0.7rem;">进行中</span>
                                                 {% endif %}
                                             </div>
                                             <div class="text-secondary small mb-1 text-truncate" title="{{ scene.base_desc }}">
@@ -383,7 +404,10 @@
                                         <!-- Actions -->
                                         <div class="d-flex align-items-center gap-2">
                                             {% if scene.base_image_path %}
-                                            <img src="{{ to_web_path(scene.base_image_path) }}" class="list-thumbnail" onclick="showPreview(this.src)" title="点击预览">
+                                            <img src="{{ to_web_path(scene.base_image_path) }}" class="list-thumbnail" onclick="showPreview(this.src)" title="场景基图" style="width: 36px; height: 36px; object-fit: cover;">
+                                            {% endif %}
+                                            {% if scene.merged_image_path %}
+                                            <img src="{{ to_web_path(scene.merged_image_path) }}" class="list-thumbnail border-primary" onclick="showPreview(this.src)" title="合并结果" style="width: 36px; height: 36px; object-fit: cover;">
                                             {% endif %}
                                             <a href="/scenes/{{ scene.id }}" class="btn btn-light btn-sm rounded-pill px-3 fw-medium text-primary bg-indigo-subtle">
                                                 管理
@@ -445,10 +469,12 @@
                                                                 <span class="badge bg-white text-dark border me-2 shadow-sm" style="min-width: 40px;">{{ scene.shot }}镜</span>
                                                                 <h6 class="mb-0 fw-bold text-dark me-2 text-truncate">{{ scene.name }}</h6>
                                                                 <!-- Status Badge (Simplified) -->
-                                                                {% if scene.status == 'generated' %}
-                                                                <i class="bi bi-check-circle-fill text-success" title="已生成"></i>
-                                                                {% elif scene.status == 'failed' %}
-                                                                <i class="bi bi-x-circle-fill text-danger" title="失败"></i>
+                                                                {% if scene.base_image_path and scene.merged_image_path %}
+                                                                <i class="bi bi-check-circle-fill text-success" title="完成"></i>
+                                                                {% elif not scene.base_image_path %}
+                                                                <span class="badge bg-secondary-subtle text-secondary rounded-pill fw-normal" style="font-size: 0.7rem;">草稿</span>
+                                                                {% else %}
+                                                                <span class="badge bg-info-subtle text-info-emphasis rounded-pill fw-normal" style="font-size: 0.7rem;">进行中</span>
                                                                 {% endif %}
                                                             </div>
                                                             <div class="text-secondary small mb-1 text-truncate" style="max-width: 300px;" title="{{ scene.base_desc }}">
@@ -465,7 +491,10 @@
                                                         <!-- Actions -->
                                                         <div class="d-flex align-items-center gap-2">
                                                             {% if scene.base_image_path %}
-                                                            <img src="{{ to_web_path(scene.base_image_path) }}" class="list-thumbnail" onclick="showPreview(this.src)" title="点击预览" style="width: 32px; height: 32px;">
+                                                            <img src="{{ to_web_path(scene.base_image_path) }}" class="list-thumbnail" onclick="showPreview(this.src)" title="场景基图" style="width: 36px; height: 36px; object-fit: cover;">
+                                                            {% endif %}
+                                                            {% if scene.merged_image_path %}
+                                                            <img src="{{ to_web_path(scene.merged_image_path) }}" class="list-thumbnail border-primary" onclick="showPreview(this.src)" title="合并结果" style="width: 36px; height: 36px; object-fit: cover;">
                                                             {% endif %}
                                                             <a href="/scenes/{{ scene.id }}" class="btn btn-sm btn-outline-primary rounded-pill px-3" style="font-size: 0.75rem;">管理</a>
                                                             <div class="dropdown">
@@ -585,9 +614,9 @@
                     <div class="mb-3">
                         <label class="text-label mb-1">场景类型</label>
                         <select name="scene_type" class="form-select bg-light border-0">
-                            <option value="indoor">室内 (Indoor)</option>
-                            <option value="outdoor">室外 (Outdoor)</option>
-                            <option value="special">特殊/虚空 (Special)</option>
+                            <option value="Indoor">室内 (Indoor)</option>
+                            <option value="Outdoor">室外 (Outdoor)</option>
+                            <option value="Special">特殊/虚空 (Special)</option>
                         </select>
                     </div>
                     <div class="mb-0">
@@ -761,9 +790,9 @@
                     <div class="mb-3">
                         <label class="text-label mb-1">场景类型</label>
                         <select name="scene_type" id="editSceneType" class="form-select bg-light border-0">
-                            <option value="indoor">室内 (Indoor)</option>
-                            <option value="outdoor">室外 (Outdoor)</option>
-                            <option value="special">特殊/虚空 (Special)</option>
+                            <option value="Indoor">室内 (Indoor)</option>
+                            <option value="Outdoor">室外 (Outdoor)</option>
+                            <option value="Special">特殊/虚空 (Special)</option>
                         </select>
                     </div>
                     <div class="mb-0">
@@ -813,7 +842,46 @@
     </div>
 </div>
 
+<!-- Confirmation Modal (Generic) -->
+<div class="modal fade" id="confirmationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-body p-4">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="bg-primary-subtle text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 48px; height: 48px;">
+                        <i class="bi bi-info-circle-fill fs-4"></i>
+                    </div>
+                    <h5 class="fw-bold mb-0 text-dark" id="confirmModalTitle">确认操作</h5>
+                </div>
+                <p class="text-secondary mb-4" id="confirmModalMessage">确定要执行此操作吗？</p>
+                <div class="d-grid gap-2 d-flex justify-content-end">
+                    <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary rounded-pill px-4" id="confirmModalBtn">确认</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+    // Generic Confirmation Helper
+    function showConfirmation(title, message, callback) {
+        document.getElementById('confirmModalTitle').textContent = title;
+        document.getElementById('confirmModalMessage').textContent = message;
+        
+        const btn = document.getElementById('confirmModalBtn');
+        // Remove previous listeners
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        
+        newBtn.onclick = function() {
+            callback();
+            bootstrap.Modal.getInstance(document.getElementById('confirmationModal')).hide();
+        };
+        
+        var modal = new bootstrap.Modal(document.getElementById('confirmationModal'));
+        modal.show();
+    }
     // Tab Persistence
     document.addEventListener("DOMContentLoaded", function(){
         var activeTab = localStorage.getItem('activeTab_project_{{ project.id }}');
@@ -1000,6 +1068,46 @@
         document.getElementById('deleteSceneForm').action = '/scenes/' + id + '/delete';
         var deleteModal = new bootstrap.Modal(document.getElementById('deleteSceneModal'));
         deleteModal.show();
+    }
+    
+    async function triggerBatchGenBase() {
+        showConfirmation(
+            "一键生成所有基图",
+            "确定要为所有草稿状态的角色生成基图吗？此操作将在后台运行，请通过系统日志查看进度。",
+            async () => {
+                try {
+                    const res = await fetch(`/projects/{{ project.id }}/batch_gen_base`, { method: 'POST' });
+                    const data = await res.json();
+                    if(data.status === 'success') {
+                        showToast("批量任务已启动，请查看系统日志", "success");
+                    } else {
+                        showToast("启动失败: " + (data.error || "未知错误"), "error");
+                    }
+                } catch(e) {
+                    showToast("请求失败", "error");
+                }
+            }
+        );
+    }
+
+    async function triggerBatchGenComplete() {
+        showConfirmation(
+            "一键生成角色完整图",
+            "确定要为所有角色生成完整图（8镜图）吗？此操作将在后台运行，请通过系统日志查看进度。",
+            async () => {
+                try {
+                    const res = await fetch(`/projects/{{ project.id }}/batch_gen_complete`, { method: 'POST' });
+                    const data = await res.json();
+                    if(data.status === 'success') {
+                        showToast("批量任务已启动，请查看系统日志", "success");
+                    } else {
+                        showToast("启动失败: " + (data.error || "未知错误"), "error");
+                    }
+                } catch(e) {
+                    showToast("请求失败", "error");
+                }
+            }
+        );
     }
 </script>
 {% endblock %}

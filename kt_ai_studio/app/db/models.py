@@ -71,16 +71,36 @@ class Scene(Base):
     
     status = Column(String, default="draft", nullable=False) # draft/generated_prompt/generated/failed
     
-    base_image_path = Column(Text, nullable=True) # Not explicitly in schema requirement but needed for storage
+    base_image_path = Column(Text, nullable=True) 
+    merged_image_path = Column(Text, nullable=True) # Final merged result with characters
+    merged_prompts_json = Column(Text, nullable=True) # Array of prompts used for merging each character
+    video_llm_context = Column(Text, nullable=True) # Context for video generation (scene + characters + action)
     
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     project = relationship("Project", back_populates="scenes")
     tasks = relationship("Task", back_populates="scene", cascade="all, delete-orphan")
     
     # Many-to-Many relationship with Players
     related_players = relationship("Player", secondary="kt_ai_scene_player_link", back_populates="related_scenes")
+
+class SystemConfig(Base):
+    __tablename__ = "kt_ai_system_config"
+    
+    key = Column(String, primary_key=True, index=True)
+    value = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class SystemLog(Base):
+    __tablename__ = "kt_ai_system_log"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    module = Column(String, nullable=False) # e.g. [一键生成所有基图]
+    progress_info = Column(String, nullable=True) # e.g. [1/10个]
+    content = Column(Text, nullable=False)
+    level = Column(String, default="INFO")
 
 class Player(Base):
     __tablename__ = "kt_ai_player"

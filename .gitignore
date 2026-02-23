@@ -14,3 +14,7 @@ output/
 .vscode/
 .idea/
 .trae/
+
+# Vercel
+vercel.json
+.vercel/

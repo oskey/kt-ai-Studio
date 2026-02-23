@@ -11,10 +11,6 @@ class Config:
     COMFYUI_WS_URL = os.getenv("COMFYUI_WS_URL", "ws://127.0.0.1:8188/ws")
     COMFYUI_OUTPUT_DIR = os.getenv("COMFYUI_OUTPUT_DIR")
     
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.deepseek.com")
-    LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-chat")
-    
     APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Shanghai")
     
     # Logging Config

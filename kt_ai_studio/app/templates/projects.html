@@ -45,6 +45,10 @@
 
             <!-- Actions -->
             <div class="d-flex gap-2">
+                <button class="btn btn-light btn-sm rounded-pill px-3 fw-medium text-success bg-success-subtle" 
+                        onclick="openAutoGenStoryModal('{{ project.id }}', '{{ project.name }}')">
+                    <i class="bi bi-magic me-1"></i>自动剧情
+                </button>
                 <a href="/projects/{{ project.id }}" class="btn btn-light btn-sm rounded-pill px-3 fw-medium text-primary bg-indigo-subtle">
                     进入
                 </a>
@@ -207,6 +211,287 @@ function confirmDelete(id, name) {
     document.getElementById('deleteProjectForm').action = '/projects/' + id + '/delete';
     var deleteModal = new bootstrap.Modal(document.getElementById('deleteProjectModal'));
     deleteModal.show();
+}
+</script>
+<!-- Auto Generate Story Modal -->
+<div class="modal fade" id="autoGenStoryModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow-lg rounded-4">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title fw-bold">
+                    <i class="bi bi-stars text-warning me-2"></i>自动创建剧情
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" id="autoGenCloseBtn"></button>
+            </div>
+            <div class="modal-body pt-4">
+                <!-- Input State -->
+                <div id="autoGenInputState">
+                    <p class="text-secondary small mb-3">
+                        根据剧情描述，AI 将自动分析并创建项目所需的<span class="text-dark fw-bold">角色</span>和<span class="text-dark fw-bold">场景</span>。
+                        生成过程完全遵循项目锁定的画风。
+                    </p>
+                    
+                    <form id="autoGenStoryForm">
+                        <input type="hidden" id="autoGenProjectId">
+                        
+                        <div class="mb-4">
+                            <label class="text-label mb-1">剧情梗概 <span class="text-danger">*</span></label>
+                            <textarea id="autoGenContent" class="form-control bg-light border-0" rows="6" 
+                                      placeholder="请输入剧情描述... 例如：主角小明在未来赛博都市醒来，发现自己被机械警察包围..." required></textarea>
+                        </div>
+                        
+                        <div class="row mb-4">
+                            <div class="col-6">
+                                <label class="text-label mb-1">插入位置 (第几幕/集)</label>
+                                <input type="number" id="autoGenEpisodeStart" class="form-control bg-light border-0" value="1" min="1" max="999">
+                                <div class="form-text text-secondary small">后续场景将从第 <span id="episodeStartDisplay" class="fw-bold">1</span> 幕开始递增</div>
+                            </div>
+                            <div class="col-6">
+                                <label class="text-label mb-1">生成数量限制 (可选)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text bg-light border-0 text-secondary small">角色</span>
+                                    <input type="number" id="autoGenMaxChars" class="form-control bg-light border-0" value="5" min="1" max="20">
+                                    <span class="input-group-text bg-light border-0 text-secondary small">场景</span>
+                                    <input type="number" id="autoGenMaxScenes" class="form-control bg-light border-0" value="10" min="1" max="50">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label class="text-label mb-2">生成模式</label>
+                            <div class="d-flex gap-3">
+                                <div class="form-check card flex-row align-items-center p-3 border-0 bg-light flex-fill">
+                                    <input class="form-check-input mt-0 me-2" type="radio" name="genMode" id="modeAppend" value="append" checked>
+                                    <label class="form-check-label w-100 cursor-pointer" for="modeAppend">
+                                        <div class="fw-bold text-dark">增加模式 (默认)</div>
+                                        <div class="small text-secondary">保留现有数据</div>
+                                    </label>
+                                </div>
+                                <div class="form-check card flex-row align-items-center p-3 border-0 bg-light flex-fill">
+                                    <input class="form-check-input mt-0 me-2" type="radio" name="genMode" id="modeOverwrite" value="overwrite">
+                                    <label class="form-check-label w-100 cursor-pointer" for="modeOverwrite">
+                                        <div class="fw-bold text-danger">覆盖模式</div>
+                                        <div class="small text-secondary">清空已有数据</div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary rounded-pill py-2 fw-bold">
+                                <i class="bi bi-magic me-2"></i>开始生成
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Progress State -->
+                <div id="autoGenProgressState" class="d-none text-center py-4">
+                    <div class="mb-4">
+                        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                    <h5 class="fw-bold mb-2">正在生成剧情资产...</h5>
+                    <p class="text-secondary small mb-4">请稍候，LLM 正在分析剧情并构建世界观。</p>
+                    
+                    <!-- Progress Bar -->
+                    <div class="progress mb-3" style="height: 10px;">
+                        <div id="autoGenProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
+                    
+                    <!-- Log Output -->
+                    <div class="card bg-light border-0 text-start">
+                        <div class="card-body p-3 font-monospace small text-secondary" style="max-height: 150px; overflow-y: auto;" id="autoGenLog">
+                            > 等待任务启动...
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Success State -->
+                <div id="autoGenSuccessState" class="d-none text-center py-4">
+                    <div class="mb-3 text-success">
+                        <i class="bi bi-check-circle-fill display-1"></i>
+                    </div>
+                    <h4 class="fw-bold mb-2">生成完成!</h4>
+                    <p class="text-secondary mb-4">
+                        成功创建 <span id="successPlayerCount" class="fw-bold text-dark">0</span> 个角色，
+                        <span id="successSceneCount" class="fw-bold text-dark">0</span> 个场景。
+                    </p>
+                    <div class="d-grid">
+                        <button class="btn btn-primary rounded-pill py-2 fw-bold" onclick="finishAutoGen()">
+                            进入项目
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let pollingInterval = null;
+
+document.getElementById('autoGenEpisodeStart').addEventListener('input', function(e) {
+    document.getElementById('episodeStartDisplay').textContent = e.target.value || 1;
+});
+
+function openAutoGenStoryModal(projectId, projectName) {
+    document.getElementById('autoGenProjectId').value = projectId;
+    document.getElementById('autoGenContent').value = '';
+    document.getElementById('modeAppend').checked = true;
+    document.getElementById('autoGenEpisodeStart').value = 1;
+    document.getElementById('episodeStartDisplay').textContent = 1;
+    document.getElementById('autoGenMaxChars').value = 5;
+    document.getElementById('autoGenMaxScenes').value = 10;
+    
+    // Reset States
+    document.getElementById('autoGenInputState').classList.remove('d-none');
+    document.getElementById('autoGenProgressState').classList.add('d-none');
+    document.getElementById('autoGenSuccessState').classList.add('d-none');
+    document.getElementById('autoGenCloseBtn').disabled = false;
+    
+    var modal = new bootstrap.Modal(document.getElementById('autoGenStoryModal'));
+    modal.show();
+}
+
+function finishAutoGen() {
+    const projectId = document.getElementById('autoGenProjectId').value;
+    window.location.href = `/projects/${projectId}`;
+}
+
+function appendLog(msg) {
+    const log = document.getElementById('autoGenLog');
+    const line = document.createElement('div');
+    line.textContent = `> ${msg}`;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+}
+
+document.getElementById('autoGenStoryForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const projectId = document.getElementById('autoGenProjectId').value;
+    const content = document.getElementById('autoGenContent').value;
+    const mode = document.querySelector('input[name="genMode"]:checked').value;
+    const episode_start = parseInt(document.getElementById('autoGenEpisodeStart').value) || 1;
+    const max_characters = parseInt(document.getElementById('autoGenMaxChars').value) || 5;
+    const max_scenes = parseInt(document.getElementById('autoGenMaxScenes').value) || 10;
+    
+    if (!content.trim()) {
+        alert("请输入剧情描述");
+        return;
+    }
+    
+    // Switch to Progress State
+    document.getElementById('autoGenInputState').classList.add('d-none');
+    document.getElementById('autoGenProgressState').classList.remove('d-none');
+    document.getElementById('autoGenCloseBtn').disabled = true; // Prevent closing
+    
+    appendLog("提交任务请求...");
+    appendLog(`配置: 模式=${mode}, 起始幕=${episode_start}, 最大角色=${max_characters}, 最大场景=${max_scenes}`);
+    
+    fetch(`/projects/${projectId}/auto_generate_story`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            content: content, 
+            mode: mode,
+            episode_start: episode_start,
+            max_characters: max_characters,
+            max_scenes: max_scenes
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success' && data.task_id) {
+            appendLog("任务已创建 (ID: " + data.task_id + ")");
+            startPolling(data.task_id);
+        } else {
+            alert('提交失败: ' + (data.error || '未知错误'));
+            resetModal();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('提交出错，请重试');
+        resetModal();
+    });
+});
+
+function resetModal() {
+    document.getElementById('autoGenInputState').classList.remove('d-none');
+    document.getElementById('autoGenProgressState').classList.add('d-none');
+    document.getElementById('autoGenCloseBtn').disabled = false;
+}
+
+function startPolling(taskId) {
+    appendLog("开始轮询任务状态...");
+    
+    if (pollingInterval) clearInterval(pollingInterval);
+    
+    pollingInterval = setInterval(() => {
+        fetch(`/api/tasks/${taskId}`)
+        .then(res => res.json())
+        .then(task => {
+            // Update Progress Bar
+            const progressBar = document.getElementById('autoGenProgressBar');
+            progressBar.style.width = task.progress + '%';
+            
+            // Infer logs from progress
+            if (task.progress === 10) appendLog("LLM 开始处理剧情...");
+            if (task.progress === 30) appendLog("LLM 正在生成角色与场景...");
+            if (task.progress === 50) appendLog("LLM 生成完成，解析数据...");
+            if (task.progress === 80) appendLog("正在写入数据库...");
+            
+            if (task.status === 'done') {
+                clearInterval(pollingInterval);
+                progressBar.style.width = '100%';
+                appendLog("任务完成！");
+                
+                // Show Success State
+                setTimeout(() => {
+                    document.getElementById('autoGenProgressState').classList.add('d-none');
+                    document.getElementById('autoGenSuccessState').classList.remove('d-none');
+                    document.getElementById('autoGenCloseBtn').disabled = false;
+                    
+                    // Parse result
+                    try {
+                        const result = JSON.parse(task.result_json);
+                        let msg = `成功写入 ${result.scenes_created} 个场景，新增 ${result.players_created} 个角色`;
+                        if (result.players_reused > 0) {
+                            msg += `，复用 ${result.players_reused} 个角色`;
+                        }
+                        
+                        document.getElementById('successPlayerCount').textContent = result.players_created + (result.players_reused || 0);
+                        document.getElementById('successSceneCount').textContent = result.scenes_created;
+                        
+                        // Show warning if any
+                        if (result.warnings && result.warnings.length > 0) {
+                            appendLog("⚠️ 警告: " + result.warnings.join("; "));
+                        }
+                        
+                        // Add detail text
+                        const p = document.createElement('p');
+                        p.className = "text-secondary small mt-2";
+                        p.textContent = msg;
+                        document.getElementById('autoGenSuccessState').appendChild(p);
+                        
+                    } catch(e) {
+                        console.error("Error parsing result", e);
+                    }
+                }, 500);
+            } else if (task.status === 'failed') {
+                clearInterval(pollingInterval);
+                appendLog("任务失败: " + task.error);
+                alert("任务失败: " + task.error);
+                document.getElementById('autoGenCloseBtn').disabled = false;
+            }
+        })
+        .catch(err => {
+            console.error("Polling error", err);
+        });
+    }, 1000);
 }
 </script>
 {% endblock %}

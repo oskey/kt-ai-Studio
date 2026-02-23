@@ -32,6 +32,35 @@ class ComfyUIClient:
             print(f"Failed to interrupt ComfyUI: {e}")
             return False
 
+    def clear_queue(self):
+        """Clears the ComfyUI execution queue"""
+        # Standard ComfyUI API: POST /queue with "clear": true clears it
+        data = json.dumps({"clear": True}).encode('utf-8')
+        req = urllib.request.Request(f"{self.base_url}/queue", data=data, method='POST')
+        try:
+            urllib.request.urlopen(req)
+            return True
+        except Exception as e:
+            print(f"Failed to clear ComfyUI queue (Method 1): {e}")
+            # Fallback to delete individual items
+            try:
+                q_req = urllib.request.Request(f"{self.base_url}/queue")
+                with urllib.request.urlopen(q_req) as response:
+                    queue_data = json.loads(response.read())
+                    
+                pending = queue_data.get('queue_pending', [])
+                ids_to_delete = [item[1] for item in pending]
+                
+                if ids_to_delete:
+                    del_data = json.dumps({"delete": ids_to_delete}).encode('utf-8')
+                    del_req = urllib.request.Request(f"{self.base_url}/queue", data=del_data, method='POST')
+                    urllib.request.urlopen(del_req)
+                    print(f"Cleared {len(ids_to_delete)} items from ComfyUI queue.")
+                return True
+            except Exception as e2:
+                print(f"Failed to clear ComfyUI queue (Method 2): {e2}")
+                return False
+
     def get_history(self, prompt_id):
         with urllib.request.urlopen(f"{self.base_url}/history/{prompt_id}") as response:
             return json.loads(response.read())
@@ -154,39 +183,45 @@ class ComfyUIClient:
             
         return self.get_history(prompt_id)[prompt_id]
 
-    def download_outputs(self, history, output_dir_base):
+    def download_outputs(self, history, output_dir):
         """
-        Downloads images from history to local output_dir.
-        Returns a dict of {node_id: [local_paths]} or similar.
+        Download images from history to output_dir.
+        Returns dict { node_id: [local_file_paths] }
         """
-        outputs = history.get('outputs', {})
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
         results = {}
         
-        # Ensure output directory exists (修复 Errno 2)
-        os.makedirs(output_dir_base, exist_ok=True)
-        
-        for node_id, node_output in outputs.items():
+        for node_id in history['outputs']:
+            node_output = history['outputs'][node_id]
             if 'images' in node_output:
-                saved_paths = []
+                file_paths = []
                 for image in node_output['images']:
                     filename = image['filename']
                     subfolder = image['subfolder']
                     folder_type = image['type']
                     
-                    image_data = self.get_image(filename, subfolder, folder_type)
-                    
-                    # Construct local path
-                    # We might want to organize by task or project here, but the caller should handle the final move.
-                    # For now, just save to a temp or direct location.
-                    # Actually, let's save to the provided output_dir_base
-                    
-                    # 修复路径问题：使用 os.path.join 确保跨平台兼容
-                    save_path = os.path.join(output_dir_base, filename)
-                    
-                    with open(save_path, 'wb') as f:
-                        f.write(image_data)
-                    
-                    saved_paths.append(save_path)
-                results[node_id] = saved_paths
+                    # Fetch image data
+                    try:
+                        image_data = self.get_image(filename, subfolder, folder_type)
+                        
+                        # Save local
+                        # Use filename from ComfyUI, but ensure uniqueness if needed?
+                        # ComfyUI handles numbering (ComfyUI_00001_.png).
+                        # We save exactly as is.
+                        file_path = os.path.join(output_dir, filename)
+                        
+                        # Handle duplicate local names if multiple runs use same output dir?
+                        # ComfyUI increments counter, so filename changes.
+                        
+                        with open(file_path, 'wb') as f:
+                            f.write(image_data)
+                            
+                        file_paths.append(file_path)
+                    except Exception as e:
+                        print(f"Failed to download image {filename}: {e}")
+                        
+                results[node_id] = file_paths
                 
         return results

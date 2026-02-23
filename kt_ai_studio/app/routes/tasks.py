@@ -122,10 +122,13 @@ async def force_reset_tasks(
 
 @router.get("/api/tasks/status")
 async def get_tasks_status(
-    task_ids: str = Query(..., description="Comma separated task IDs"),
+    task_ids: str = Query("", description="Comma separated task IDs"),
     db: Session = Depends(session.get_db)
 ):
     try:
+        if not task_ids:
+            return JSONResponse({})
+            
         ids = [int(id) for id in task_ids.split(",") if id.isdigit()]
         if not ids:
             return JSONResponse({})
@@ -214,6 +217,26 @@ async def get_tasks_status(
         # Return empty or error to avoid frontend loop crash
         return JSONResponse({"error": str(e)}, status_code=500)
 
+@router.get("/api/tasks/{task_id}")
+async def get_task_detail(
+    task_id: int,
+    db: Session = Depends(session.get_db)
+):
+    task = crud.get_task(db, task_id)
+    if not task:
+        return JSONResponse({"error": "Task not found"}, status_code=404)
+        
+    return JSONResponse({
+        "id": task.id,
+        "status": task.status,
+        "progress": task.progress or 0,
+        "result_json": task.result_json,
+        "error": task.error, # Assuming error field exists or we parse it from result
+        "created_at": task.created_at.isoformat() if task.created_at else None,
+        "started_at": task.started_at.isoformat() if task.started_at else None,
+        "completed_at": task.completed_at.isoformat() if task.completed_at else None
+    })
+
 @router.post("/tasks/interrupt")
 async def interrupt_task(
     task_id: int = Form(None),
@@ -259,3 +282,62 @@ async def interrupt_task(
         traceback.print_exc()
         # Return 200 even on error to prevent frontend crash loop, but log it
         return JSONResponse({"status": "error", "message": str(e)}, status_code=200)
+
+@router.post("/tasks/stop_all")
+async def stop_all_tasks(db: Session = Depends(session.get_db)):
+    """
+    Stops ALL running and queued tasks globally.
+    1. Interrupts ComfyUI.
+    2. Clears ComfyUI Queue.
+    3. Marks all running/queued tasks in DB as failed.
+    """
+    import traceback
+    from app.services.tasks.manager import task_manager
+    from app.db import models # Re-import just in case
+    
+    count = 0
+    try:
+        # 1. Interrupt ComfyUI
+        if task_manager and hasattr(task_manager, 'comfy_client'):
+            try:
+                print("Global Stop: Interrupting ComfyUI...")
+                task_manager.comfy_client.interrupt()
+                
+                print("Global Stop: Clearing ComfyUI Queue...")
+                task_manager.comfy_client.clear_queue()
+                
+            except Exception as e:
+                print(f"Global Stop: Failed to interrupt ComfyUI: {e}")
+                
+        # 2. Mark all running/queued tasks as failed
+        tasks = db.query(models.Task).filter(
+            models.Task.status.in_(['queued', 'running'])
+        ).all()
+        
+        for task in tasks:
+            task.status = 'failed'
+            task.result_json = json.dumps({"error": "Stopped by user (Global Stop)"})
+            task.completed_at = datetime.utcnow()
+            count += 1
+            
+        db.commit()
+        
+        # Also log to system log
+        try:
+            log = models.SystemLog(
+                module="Task Control",
+                progress_info="STOP",
+                content=f"用户执行了一键停止，{count} 个任务被终止，ComfyUI队列已清空。",
+                level="WARNING"
+            )
+            db.add(log)
+            db.commit()
+        except:
+            pass
+            
+        return JSONResponse({"status": "success", "count": count})
+        
+    except Exception as e:
+        print(f"Global Stop Failed: {e}")
+        traceback.print_exc()
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
