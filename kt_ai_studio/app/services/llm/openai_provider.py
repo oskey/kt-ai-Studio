@@ -106,7 +106,9 @@ def normalize_prompt_structure(raw_text: str, style_name: str) -> str:
         "正面或接近正面视角",
         "人物垂直居中构图",
         "全身像",
-        "纯背景",
+        "纯白色背景", # Updated to Pure White Background
+        "Simple Background", # English reinforcement
+        "White Background",  # English reinforcement
         "无遮挡，无道具遮挡身体",
         "人物完整不裁切",
         "下半身完整可见",
@@ -303,7 +305,21 @@ def normalize_scene_prompt_structure(raw_text: str, style_name: str, style_pos: 
     else:
         final_parts.extend(default_quality)
         
-    return "\n".join(final_parts).strip()
+    # Final cleanup: Remove known character-related keywords that might have slipped in from style
+    character_keywords = [
+        "五官", "眼睛", "发型", "肤色", "皮肤", "手指", "面部", "肢体", "身材", "比例", "头身", "表情", "眼神"
+    ]
+    cleaned_final_text = "\n".join(final_parts).strip()
+    
+    # Filter out lines containing character keywords
+    lines = cleaned_final_text.split('\n')
+    filtered_lines = []
+    for line in lines:
+        if any(kw in line for kw in character_keywords):
+            continue
+        filtered_lines.append(line)
+        
+    return "\n".join(filtered_lines).strip()
 
 def normalize_scene_negative_prompt(raw_neg: str, style_neg: str) -> str:
     """
@@ -362,50 +378,55 @@ def generate_player_prompts(name: str, sex: str, mark: str, style_preset=None, l
     engine_hint = f"{style_preset.engine_hint}" if style_preset and style_preset.engine_hint else "本项目使用 Qwen Image / Wan2.2 图像模型"
     
     system_prompt = f"""你是一个【图像生成提示词扩写器】。
-当前项目已锁定画风，这是最高优先级约束。
+    当前项目已锁定画风，这是最高优先级约束。
 
-画风名称：{style_name}
+    画风名称：{style_name}
 
-【核心画风提示词】（必须严格遵守，权重最高）：
-Positive (正面风格): {style_pos}
-Negative (负面风格): {style_neg}
+    【核心画风提示词】（必须严格遵守，权重最高）：
+    Positive (正面风格): {style_pos}
+    Negative (负面风格): {style_neg}
 
-【画风执行守则】（LLM Style Guard）：
-{style_guard}
+    【画风执行守则】（LLM Style Guard）：
+    {style_guard}
 
-【下游生成模型，你输出的提示词必须可直接用于这个 Comfyui 模型】
-{engine_hint}
+    【下游生成模型，你输出的提示词必须可直接用于这个 Comfyui 模型】
+    {engine_hint}
 
-你的任务：
-1) 仅在该画风下扩写人物细节
-2) 不得改变画风，必须融入 Positive 风格词
-3) 输出必须详细，适合图像模型理解
-4) 不要出现人物名字
-5) 不要出现“适合合成 / 稳定 / 图生视频”等系统说明
-6) 所有输出内容【只能使用中文】
-7) 输出格式【必须是合法 JSON】
+    【任务目标】
+    你需要生成一张用于后续场景合成的【人物素材基图】。
+    这张图必须是“干净的、去背景的、高质量的人物立绘”。
 
-你生成的描述将被系统整理为以下结构：
-- 人物外观
-- 体型与姿态
-- 服装
-- 画面与质感
+    你的任务：
+    1) 仅在该画风下扩写人物细节（外观、服装、发型等）。
+    2) **背景控制 (CRITICAL)**：无论画风如何，生成的图片**必须是纯色背景（Pure White Background）**。禁止生成任何环境、光影背景、复杂的场景元素。
+       - 原因：这张图后续会被抠图，背景越干净越好。
+       - 画风提示词仅用于控制人物本身的绘画风格（如笔触、上色、光影），**绝对不要**把画风中的场景描述（如“室内”、“街道”、“森林”）带入到这张图中。
+    3) 输出必须详细，适合图像模型理解。
+    4) 不要出现人物名字。
+    5) 所有输出内容【只能使用中文】。
+    6) 输出格式【必须是合法 JSON】。
 
-请尽量使用可拆分的短句或多行描述，避免长段总结性文本。
-对于 prompt_pos 字段，请务必按以下【标签格式】分段输出内容：
+    你生成的描述将被系统整理为以下结构：
+    - 人物外观
+    - 体型与姿态
+    - 服装
+    - 画面与质感
 
-【人物外观】
-(这里写外观描述...)
+    请尽量使用可拆分的短句或多行描述，避免长段总结性文本。
+    对于 prompt_pos 字段，请务必按以下【标签格式】分段输出内容：
 
-【体型与姿态】
-(这里写体型动作...)
+    【人物外观】
+    (这里写外观描述...)
 
-【服装】
-(这里写服装...)
+    【体型与姿态】
+    (这里写体型动作...)
 
-【画面与质感】
-(这里写画质光影...)
-"""
+    【服装】
+    (这里写服装...)
+
+    【画面与质感】
+    (这里写画质光影...)
+    """
     
     user_prompt = f"""
     人物基础描述：
@@ -415,13 +436,13 @@ Negative (负面风格): {style_neg}
     生成要求：
     - 人物基图
     - 全身像
-    - 纯人物，无背景
+    - **纯白背景 (Pure White Background)**，无任何杂物
     - 基础服装（用于后续换装）
     
     请输出 JSON：
     {{
-      "prompt_pos": "严格按照 System Prompt 中的【标签格式】输出，包含：人物外观、体型与姿态、服装、画面与质感。必须包含：全身图、纯背景",
-      "prompt_neg": "避免画风漂移、比例错误、低质量、半身、裁切",
+      "prompt_pos": "严格按照 System Prompt 中的【标签格式】输出，包含：人物外观、体型与姿态、服装、画面与质感。必须包含：全身图、纯白背景(pure white background), simple background",
+      "prompt_neg": "避免画风漂移、比例错误、低质量、半身、裁切、复杂背景、环境背景",
       "player_desc": "只包含人物客观外观特征，不含名字、不含用途说明"
     }}
     """
@@ -438,16 +459,24 @@ Negative (负面风格): {style_neg}
     # --- Debug Logging End ---
 
     try:
-        # Standard OpenAI-compatible call
-        # Note: Some providers might need slight adjustments, but chat.completions is standard.
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
+        is_doubao = "volces.com" in llm_profile.base_url or "doubao" in model_name.lower()
+        
+        # Prepare params
+        params = {
+            "model": model_name,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            response_format={"type": "json_object"}
-        )
+            "timeout": 120
+        }
+        
+        # Only add response_format if NOT Doubao (as it might not support it or requires strict json mode)
+        # Actually Doubao supports it but let's be safe. If user says it's not standard.
+        if not is_doubao:
+            params["response_format"] = {"type": "json_object"}
+            
+        response = client.chat.completions.create(**params)
         
         content = response.choices[0].message.content
         
@@ -592,81 +621,155 @@ def generate_video_prompts(
         api_key=llm_profile.api_key,
         base_url=llm_profile.base_url
     )
-    
-    
- 
-    # Add engine hint for model-specific prompting
+
     engine_hint = f"{style_preset.engine_hint}" if style_preset and style_preset.engine_hint else "本项目使用 Qwen Image / Wan2.2 图像模型"
     
     style_name = style_preset.name if style_preset else "默认通用风格"
     style_guard = style_preset.llm_style_guard if style_preset else "无特殊风格约束，保持写实。"
     style_pos = style_preset.style_pos if style_preset else ""
     style_neg = style_preset.style_neg if style_preset else ""
+    
+    # Ensure model_name is defined before use
+    model_name = llm_profile.model or "gpt-3.5-turbo"
+
+    # Dialogues Context Logic
+    dialogues_constraint = ""
+    raw_dialogues = None
+
+    try:
+        # Check if video_context is string or dict
+        if isinstance(video_context, str):
+            ctx = json.loads(video_context)
+        else:
+            ctx = video_context
+
+        if "scene" in ctx and "dialogues" in ctx["scene"]:
+            raw_dialogues = ctx["scene"]["dialogues"]
+    except Exception as e:
+        print(f"Failed to parse video_context: {e}")
+        pass
+
+    # Direct Length Check & String Extraction
+    has_dialogue = False
+    d_text = ""
+
+    if raw_dialogues:
+        # Case 1: List (most common)
+        if isinstance(raw_dialogues, list):
+            if len(raw_dialogues) > 0:
+                has_dialogue = True
+                # Try to format list of dicts
+                try:
+                    lines = []
+                    for d in raw_dialogues:
+                        if isinstance(d, dict):
+                            lines.append(f"- {d.get('role', 'Unknown')}: {d.get('content', '')}")
+                        else:
+                            lines.append(f"- {str(d)}")
+                    d_text = "\n".join(lines)
+                except:
+                    # Fallback: just dump the list structure
+                    d_text = json.dumps(raw_dialogues, ensure_ascii=False)
+        
+        # Case 2: String (serialized JSON or raw text)
+        elif isinstance(raw_dialogues, str):
+            if len(raw_dialogues.strip()) > 2: # "[]" is length 2, so >2 implies content
+                has_dialogue = True
+                d_text = raw_dialogues # Use directly
+
+    if has_dialogue:
+        dialogues_constraint = f"""
+    【对话动作引导 (重要)】
+    本场景包含以下人物对话：
+    {d_text}
+    
+    任务要求：
+    1. 你必须理解对话的情绪与内容，在 prompt_pos 中描述对应人物正在说话的状态（如：张嘴说话、神情激动、低声耳语、大笑等）。
+    2. **角色对应 (Crucial)**：
+       - 请根据 `characters` 列表中的 `name` 与对话中的 `role` 进行匹配。
+       - 必须明确指出**哪个人物**在说话。例如："The young man (陈平安) is talking..." 或 "The shopkeeper (陶掌柜) is speaking..."。
+       - 如果有多人对话，请描述他们的交互状态（如：面对面交谈、一人倾听一人诉说）。
+    3. **核心红线**：禁止生成任何形式的字幕、对话框、文字气泡。禁止在画面底部生成台词文本。
+    4. 仅描述“人物说话的动作与神态”即可（e.g., "talking, mouth open, expressive face, gesturing"）。
+    """
+    else:
+        dialogues_constraint = """
+    【无对话场景】
+    本场景无对话。请描述人物处于闭嘴、静默或专注于动作的状态。
+    """
+
+    video_context_str = video_context if isinstance(video_context, str) else json.dumps(video_context, ensure_ascii=False, indent=2)
 
     system_prompt = f"""你是一个专业的【图生视频提示词生成器】。
-你的任务是根据提供的【场景与角色上下文】，为 下游生成模型 视频生成模型编写提示词。
+    你的任务是根据提供的【场景与角色上下文】，为 下游生成模型 视频生成模型编写提示词。
 
-【项目画风】
-{style_name}
-{style_guard}
+    【项目画风】
+    {style_name}
+    {style_guard}
 
-【画风正向（必须融入）】
-{style_pos}
+    【画风正向（必须融入）】
+    {style_pos}
 
-【画风反向（必须融入）】
-{style_neg}
+    【画风反向（必须融入）】
+    {style_neg}
 
-【下游生成模型】
-{engine_hint}
+    【下游生成模型】
+    {engine_hint}
 
-【输入数据说明】
-输入是一个 JSON，包含 `scene`（场景信息）和 `characters`（角色列表）。
-`characters` 数组中的 `action_desc` 描述了角色在画面中的位置（如"左侧前景"）和动作。
-注意：ComfyUI 无法识别角色名字（如"陈平安"），也无法区分 image1/image2。
+    【输入数据说明】
+    输入是一个 JSON，包含 `scene`（场景信息）和 `characters`（角色列表）。
+    `characters` 数组中的 `action_desc` 描述了角色在画面中的位置（如"左侧前景"）和动作。
+    注意：ComfyUI 无法识别角色名字（如"陈平安"），也无法区分 image1/image2。
+    
+    如果 `scene` 中包含 `dialogues` 字段，说明本场景有角色对话。你必须参考这些对话来设计人物的动作（如开口说话、表情变化）。
 
-【任务要求】
-1. **生成正向提示词 (prompt_pos)**：
-   - 必须是一段流畅的中文描述。
-   - **核心任务**：将 `characters` 中的空间位置和动作描述，转化为模型能理解的全局画面描述。
-   - **去名化**：绝对禁止出现角色名字。用 "a young man", "a woman in red", "a figure" 等通用词代替。
-   - **空间引导**：明确描述人物在画面中的位置（e.g., "on the left foreground", "in the center", "walking away from camera"）。
-   - **融合环境**：结合 `scene` 的 `visual_desc` 和 `shot_type`，描述整体氛围、光影和动态。
-   - **风格保持**：必须融入【画风正向】提示词，确保视频风格与原图一致。
+    【任务要求】
+    1. **生成正向提示词 (prompt_pos)**：
+       - 必须是一段流畅的中文描述。
+       - **核心任务**：将 `characters` 中的空间位置和动作描述，转化为模型能理解的全局画面描述。
+       - **去名化**：绝对禁止出现角色名字。用 "a young man", "a woman in red", "a figure" 等通用词代替。
+       - **空间引导**：明确描述人物在画面中的位置（e.g., "on the left foreground", "in the center", "walking away from camera"）。
+       - **融合环境**：结合 `scene` 的 `visual_desc` 和 `shot_type`，描述整体氛围、光影和动态。
+       - **风格保持**：必须融入【画风正向】提示词，确保视频风格与原图一致。
+       - **对话动作**：如果存在对话，描述人物说话的神态动作，但**严禁生成字幕**。
 
-2. **生成负向提示词 (prompt_neg)**：
-   - 必须包含【画风反向】提示词。
-   - 包含通用视频负向词（如 "static, distortion, morphing, watermarks, text, bad anatomy"）。
-   - 返回的提示词必须使用中文。
+    2. **生成负向提示词 (prompt_neg)**：
+       - 必须包含【画风反向】提示词。
+       - 包含通用视频负向词（如 "static, distortion, morphing, watermarks, text, bad anatomy"）。
+       - **强制包含**："subtitles, speech bubble, text, caption, lower third" 以防止字幕生成。
+       - 返回的提示词必须使用中文。
 
-3. **生成视频参数 (fps, length)**：
-   - 根据动作复杂度推荐 FPS (通常 16 或 24)。
-   - 根据内容推荐时长 (Duration)，最长不超过 5 秒。
-   - 计算总帧数 (Length) = (FPS * Duration) + 1。
-   - 例如：3秒视频，FPS 16，Length = (16 * 3) + 1 = 49。
-   - 例如：5秒视频，FPS 24，Length = (24 * 5) + 1 = 121。
+    3. **生成视频参数 (fps, length)**：
+       - 根据动作复杂度推荐 FPS (通常 16 或 24)。
+       - 根据内容推荐时长 (Duration)，最长不超过 5 秒。
+       - 计算总帧数 (Length) = (FPS * Duration) + 1。
+       - 例如：3秒视频，FPS 16，Length = (16 * 3) + 1 = 49。
+       - 例如：5秒视频，FPS 24，Length = (24 * 5) + 1 = 121。
+       
+    {dialogues_constraint}
 
-【输出格式】
-必须是合法的 JSON格式：
-{{
-  "prompt_pos": "...",
-  "prompt_neg": "...",
-  "fps": 16,
-  "length": 49,
-  "duration_reasoning": "动作简单，3秒足够展示..."
-}}
-"""
+    【输出格式】
+    必须是合法的 JSON格式：
+    {{
+      "prompt_pos": "...",
+      "prompt_neg": "...",
+      "fps": 16,
+      "length": 49,
+      "duration_reasoning": "动作简单，3秒足够展示..."
+    }}
+    """
 
     user_prompt = f"""
-【场景与角色上下文】
-{video_context}
+    【场景与角色上下文】
+    {video_context_str}
 
-请生成用于图生视频的 prompt_pos 和 prompt_neg。
-请注意：
-1. 必须融入画风【{style_name}】的风格词。
-2. 绝对不要出现人名，用"a young man/woman"等通用词。
-3. 准确描述人物位置和动作。
-5. 必须返回建议的 FPS 和 Length (计算公式: fps * 秒数 + 1)，最长不超过 5 秒。
-"""
+    请生成用于图生视频的 prompt_pos 和 prompt_neg。
+    请注意：
+    1. 必须融入画风【{style_name}】的风格词。
+    2. 绝对不要出现人名，用"年轻人/妇女"等通用词。
+    3. 准确描述人物位置和动作。
+    5. 必须返回建议的 FPS 和 Length (计算公式: fps * 秒数 + 1)，最长不超过 5 秒。
+    """
 
     if config.LLM_LOG:
         print("-" * 50)
@@ -676,15 +779,22 @@ def generate_video_prompts(
         print("-" * 50)
 
     try:
-        completion = client.chat.completions.create(
-            model=llm_profile.model or "gpt-3.5-turbo",
-            messages=[
+        is_doubao = "volces.com" in llm_profile.base_url or "doubao" in model_name.lower()
+        
+        params = {
+            "model": llm_profile.model or "gpt-3.5-turbo",
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.7,
-            response_format={"type": "json_object"}
-        )
+            "temperature": 0.7,
+            "timeout": 120 # Increased timeout for merge planning
+        }
+        
+        if not is_doubao:
+            params["response_format"] = {"type": "json_object"}
+
+        completion = client.chat.completions.create(**params)
         
         content = completion.choices[0].message.content
         
@@ -705,7 +815,7 @@ def generate_video_prompts(
             "prompt_neg": "low quality, static, deformed, watermark, text"
         }
 
-def generate_scene_prompts(base_desc: str, style_preset=None, llm_profile=None, scene_type="Indoor") -> dict:
+def generate_scene_prompts(base_desc: str, style_preset=None, llm_profile=None, scene_type="Indoor", player_count=0) -> dict:
     if not llm_profile:
         raise ValueError("No LLM Profile provided. Please configure LLM in Settings.")
 
@@ -735,33 +845,69 @@ def generate_scene_prompts(base_desc: str, style_preset=None, llm_profile=None, 
     elif st_lower == "special":
         type_constraint = "这是【特殊/超现实场景】。可以突破常规物理逻辑，强调概念设计与独特氛围。"
     
-    system_prompt = f"""你是“受控扩写器”，不是创作者。你必须严格服从【项目画风】约束，不允许改变画风。
+ 
+    player_constraint = "这是纯场景底图，画面中禁止出现任何人物、角色。"
+    
+    system_prompt = f"""你是一个【图像场景生成提示词清洗与重写器】。
+    
+    【项目画风名称】
+    {style_name}
+    
+    【项目画风正向（必须融入 prompt_pos）】
+    {style_pos}
+    
+    【项目画风反向（必须融入 prompt_neg）】
+    {style_neg}
+    
+    【画风守卫（自然语言约束，必须遵守）】
+    {style_guard}
+    
+    【下游生成模型，你输出的提示词必须可直接用于这个 Comfyui 模型】
+    {engine_hint}
+    
+    【场景类型约束】
+    {type_constraint}
+    {player_constraint}
+    
+    你的任务是： 
+    在保持原有画面风格、镜头语言、氛围与美术一致性的前提下，
+    对输入的提示词进行整理、强化与重写，
+    并最终输出【可直接用于图像生成模型的正向提示词与负向提示词】。
 
-【项目画风名称】
-{style_name}
+    【⚠️ 核心强制规则（必须严格遵守）】 
+    1. 如果输入内容中出现：
+       - 任何人物姓名（如：陈平安、宁姚等）
+       - 任何人物身份、角色、主角、配角描述
+       - 任何暗示“有人在场 / 人物出现 / 人物行为”的内容 
+       👉 一律 **忽略、删除，不得保留，不得替换为“某人”“人物剪影”等变体**。
 
-【项目画风正向（必须融入 prompt_pos）】
-{style_pos}
+    2. 最终输出的提示词中：
+       - **不能出现任何人物**
+       - **不能暗示人物存在**
+       - **不能出现人形、生物主体、角色轮廓**
+       - 画面必须是【纯场景 / 纯环境 / 纯空间表达】
 
-【项目画风反向（必须融入 prompt_neg）】
-{style_neg}
+    3. 即使原始描述以人物为核心，
+       你也必须只提取：
+       - 场景结构
+       - 建筑 / 自然环境
+       - 光影、天气、时间
+       - 氛围、情绪、美术风格
+       - 摄影机语言（景别、角度、构图）
+    
+    4. **风格保持规则**：
+       - 保持原有项目指定的画风与美术体系 
+       - 不要引入新的题材或风格 
+       - 不要写实转卡通 / 不要卡通转写实 
+       - 不主动增加不存在的剧情元素 
+       
+    5. **画风词清洗**：
+       - 仔细检查【项目画风正向】中的词汇。
+       - 如果其中包含“五官、发型、肤色、眼睛、手指、肢体”等人物特有的描述，**必须将其剔除**，不要带入到场景提示词中。
+       - 只保留画风中关于“光影、色彩、笔触、材质、渲染风格”的描述。
 
-【画风守卫（自然语言约束，必须遵守）】
-{style_guard}
-
-【下游生成模型，你输出的提示词必须可直接用于这个 Comfyui 模型】
-{engine_hint}
-
-【场景类型约束】
-{type_constraint}
-
-【强制规则】
-    1) 只能扩写“场景细节”，禁止输出人物、角色、人体、面孔、服装等内容。
-    2) 必须输出镜头景别（shot_type）：明确是远景、全景、中景还是特写，并写入 prompt_pos。
-    3) 禁止输出情绪与剧情：禁止“紧张/温馨/诡异/悬疑”等情绪词。
-    4) 你必须输出中文，并且只输出 JSON（不要输出任何解释、注释、前后缀文字）。
-    5) prompt_pos 必须是“结构化分段文本”，按固定顺序输出，且每段多行短句。
-    6) scene_desc 必须是“客观场景指纹”：只写空间结构/材质/固定物件/光照，不写人物、不写镜头、不写用途。
+    你的目标是： 
+    👉 让生成模型只看到一个“强氛围、强构图、无人存在的电影级场景画面”。
 
     你生成的描述将被系统整理为以下结构：
     - 核心约束 (System Injected)
@@ -814,14 +960,21 @@ def generate_scene_prompts(base_desc: str, style_preset=None, llm_profile=None, 
     # --- Debug Logging End ---
 
     try:
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
+        is_doubao = "volces.com" in llm_profile.base_url or "doubao" in model_name.lower()
+        
+        params = {
+            "model": model_name,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            response_format={"type": "json_object"}
-        )
+            "timeout": 120 # Increased timeout for long story generation
+        }
+        
+        if not is_doubao:
+            params["response_format"] = {"type": "json_object"}
+
+        response = client.chat.completions.create(**params)
         
         content = response.choices[0].message.content
         
@@ -922,6 +1075,9 @@ def generate_merge_prompts(
     # Add engine hint for model-specific prompting
     engine_hint = f"{style_preset.engine_hint}" if style_preset and style_preset.engine_hint else "本项目使用 Qwen Image / Wan2.2 图像模型"
     
+    # Ensure model_name is defined before use
+    model_name = llm_profile.model or "gpt-3.5-turbo"
+    
     # Construct Players Info for Prompt
     players_data_for_prompt = []
     for p in players:
@@ -965,7 +1121,7 @@ def generate_merge_prompts(
     if is_single_player:
         # --- Single Player Optimized Prompt ---
         system_prompt = f"""你是一个专业的图像合成编排器（单人精细化模式）。
-你的任务是根据【场景详细指纹】和【场景基础描述】，为唯一的角色规划最完美的合成方案。
+Your task is to plan the perfect composition for a single character based on the [Scene Detailed Fingerprint] and [Scene Basic Description].
 
 【项目画风】
 {style_name}
@@ -984,33 +1140,48 @@ def generate_merge_prompts(
 {scene_type}
 
 【任务目标】
-当前场景只有一名角色。你需要充分利用场景描述中的氛围、光影、细节，让角色完美融入其中，并执行符合情境的动作。
-不要局限于简单的“增加到某位置”，而要生成一段“富含动作与环境交互”的描述。
+当前场景只有一名角色。你需要充分利用场景描述中的氛围、光影、细节，让角色完美融入其中。
+**关键挑战**：原始人物素材图片可能很大（如半身像），你必须通过提示词强制缩小人物比例，使其适配场景空间，避免人物过大充满屏幕。
 
 【强制规则】
 1. **merge_pos (核心)**：
    - 必须是一段流畅的自然语言描述。
-   - **格式要求**：虽然仍需包含“将 image2 的[性别]人物增加到 image1 的[位置]”这一核心指令（为了让下游识别位置），但随后必须紧跟详细的动作与环境描写。
-   - **推荐格式**："将 image2 的[性别]人物增加到 image1 的[位置]。人物[动作描述]，[神态描述]，[与环境的交互]。[光影融合描述]。"
-   - **示例**："将 image2 的男性人物增加到 image1 的中间前景。他正弯腰整理货架上的竹筐，神情专注，夕阳余晖洒在他的侧脸，影子拉长投射在青石路面上。"
+   - **格式要求**：包含“将 image2 图中唯一的[性别]人物增加到 image1 的[位置]”这一核心指令。
+   - **人物替换增强 (Crucial)**：
+     - 如果 image1 (场景图) 中看起来已经存在模糊的人物轮廓或占位符，**必须**在提示词中明确要求“用 image2 的人物替换 image1 中的原有轮廓/人物”。
+     - 提示词追加：“replace existing figure in image1 with image2 character”。
+   - **视点与比例自适应 (Crucial)**：
+     - **检测场景描述中的视点**：仔细阅读【场景基础描述】。
+     - **如果是特写 (Close-up)**：
+       - **必须使用** "close up", "portrait", "upper body" 等特写比例词。
+       - **禁止使用** "full body", "small scale", "wide shot"。
+       - **位置**：通常是 "中间" 或 "中间前景"。
+       - **示例**："将 image2 图中唯一的男性人物合并到 image1 的中间前景。特写(close up)，半身像(upper body)，面部表情清晰，背景虚化。"
+     - **如果是全景/远景 (Wide/Long Shot)**：
+       - **必须使用** "full body", "wide shot", "small scale"。
+       - **示例**："将 image2 图中唯一的男性人物合并到 image1 的中间中景。全身像(full body)，人物比例较小(small scale)。"
+   - **推荐格式**："将 image2 图中唯一的[性别]人物合并到 image1 的[位置]。[比例描述]，人物[动作描述]，[神态描述]，[与环境的交互]。[光影融合描述]。"
    - **禁止**：禁止写“image1”或“image2”以外的图片代号。
 
 2. **merge_neg (核心)**：
    - 保持原有的严格约束（禁止换脸、禁止重绘背景等）。
    - **禁止出现任何人物姓名**。
+   - **禁止与视点冲突**：如果是特写场景，禁止写 "全身"；如果是全景场景，禁止写 "特写"。
 
-3. **view_key 选择**：
-   - 根据你构思的动作和站位，从 `views_keys` 中选择最匹配的一个（如侧身动作选 side/45，正面对话选 front）。
+3. **view_key 选择 (Strict Logic)**：
+   - **特写场景优先**：如果【场景基础描述】中包含“特写”、“Close-up”、“面部”、“眼神”等关键词，且 `views_keys` 中有 `close`，**必须优先选择 `close`**。如果没有 `close`，选择 `front` 或 `low`。
+   - **普通场景优先**：根据动作和站位选择 `right45`, `left45`, `front` 等。
+   - **远景/俯视优先**：如果场景是俯视，优先选 `aerial` 或 `wide`。
 
 输出结构 (JSON)：
 {{
-  "layout_reasoning": "分析场景氛围与角色关系，构思动作...",
+  "layout_reasoning": "分析场景氛围与角色关系，构思动作与比例...",
   "steps": [
     {{
       "player_id": 123,
       "player_name": "角色名",
       "view_key": "right45",
-      "merge_pos": "将 image2 的[性别]人物增加到 image1 的...",
+      "merge_pos": "将 image2 的[性别]人物合并到 image1 的...",
       "merge_neg": "..."
     }}
   ]
@@ -1040,44 +1211,66 @@ def generate_merge_prompts(
 【强制规则】
 1. **全局空间规划 (Crucial)**：
    - 必须先分析场景的透视结构（前景、中景、远景）。
-   - **防重叠 (Collision Avoidance)**：必须明确分配每个角色的站位。例如：A在左侧前景，B在右侧中景。
+   - **防重叠 (Collision Avoidance)**：必须明确分配每个角色的站位。例如：A在左侧中景，B在右侧远景。
+   - **比例控制 (Scale Control)**：原始人物素材图片很大，合成时必须要求人物以【全身、中远景、较小比例】融入场景。避免“巨型人物”填满画面。
+   - **错位分布 (Staggered Layout)**：不要将所有人物安排在同一水平线上。利用纵深感，将人物安排在不同深度（前景/中景/远景），形成错落有致的构图。
    - 严禁让两个角色出现在同一个坐标点，或者发生身体穿插。
 
-2. **merge_pos 必须极其简短与明确 (Simple & Precise)**：
+2. **体型差与年龄感 (Age & Size Awareness) - NEW & CRITICAL**:
+   - **必须分析角色名字中的后缀属性**（如：幼年、少年、青年、成年等）。
+   - **如果角色是“幼年/儿童”**：
+     - **强制缩小比例**：必须在 `merge_pos` 中显式加入 "very small scale", "child body proportions", "shorter than adult"。
+     - **相对高度**：如果与成人同框，必须明确“比旁边的成人矮小 (shorter than the adult next to him/her)”。
+     - **站位调整**：儿童通常位于画面中下部或前景低处。
+   - **如果角色属性相同（如同为少年/青年）**：
+     - **保持比例一致**：不要刻意缩小某一方，除非是远景透视需要。
+     - **禁止不合理的体型差**：两人应具有相似的头身比和高度。
+   - **如果必须缩小**：仅当角色处于【远景/背景】位置时，才允许大幅缩小比例，并在 Prompt 中说明 "in the distance"。
+
+3. **merge_pos 必须极其简短与明确 (Simple & Precise)**：
    - **下游模型理解能力有限，禁止复杂的方位描述**。
-   - **格式必须为**：“将 image2 的[性别]人物增加到 image1 的[位置]，[简短动作]”。
-   - **位置词只能是以下之一**：
-     - 左侧前景 / 右侧前景 / 中间前景
-     - 左侧中景 / 右侧中景 / 中间中景
-     - 远景左侧 / 远景右侧 / 远景中间
+   - **格式必须为**：“将 image2 图中唯一的[性别]人物增加到 image1 的[位置]，[比例描述]，[简短动作]”。
+   - **位置词只能是以下之一**（尽量少用前景，多用中景以缩小比例）：
+     - 左侧中景 / 右侧中景 / 中间中景 (推荐)
+     - 远景左侧 / 远景右侧 / 远景中间 (推荐)
+     - 左侧前景 / 右侧前景 / 中间前景 (仅当需要特写时使用)
+   - **比例描述词 (必须包含)**：full body (全身), small scale (小比例), wide shot (广角), in the distance (远处)。
    - **禁止**：禁止写“靠近XXX物体”、“在XXX之后”、“形成XXX构图”等复杂修饰语。
    - **允许**：可以包含简短的动作描述，如“站立”、“坐着”、“行走”、“挑水”、“扫地”等，但必须极其简练。
-   - **禁止**：禁止在 merge_pos 中描述朝向、光影、复杂的交互细节。这些统统不要写！只写位置和核心动作！
+   - **禁止**：禁止在 merge_pos 中描述朝向、光影、复杂的交互细节。这些统统不要写！只写位置、比例和核心动作！
    - **示例**：
-     - 正确："将 image2 的男性人物增加到 image1 的左侧前景，正在挑水"
-     - 正确："将 image2 的女性人物增加到 image1 的右侧中景，站立"
+     - 正确："将 image2 图中唯一的男性人物增加到 image1 的左侧中景，全身像(full body)，小比例(small scale)，正在挑水"
+     - 正确："将 image2 图中唯一的女性人物增加到 image1 的右侧远景，全身(full body)，站立"
      - 错误："将 image2 合成在柜台后方靠近窗户的位置..." (太复杂)
 
-3. **merge_neg 必须包含**：
+4. **merge_neg 必须包含**：
    - 禁止重绘背景/改变光照风格。
    - 禁止新增文字/水印/logo。
    - 禁止裁切人物（头顶/脚/鞋都不能缺）。
+   - **核心禁止**：禁止改变、替换或覆盖 image1 中已经存在的任何人物（keep existing characters unchanged）。
    - 禁止把人物变成其他人/换脸/换衣。
    - **禁止出现任何人物姓名（如“陈平安”），必须使用通用描述**。
    - **禁止人物重叠/穿模/多头多手**。
+   - **禁止人物过大/大头照/半身像** (close up, portrait)。
 
-4. **view_key 选择**：
-   - 必须从角色的 `views_keys` 列表中选择。
+5. **view_key 选择 (Strict Match)**：
+   - 必须从角色的 `views_keys` 列表中选择最匹配的一个。
+   - **禁止滥用 "wide" 或 "front"**：如果角色有 "side", "right45", "back" 等更具体的视角，优先使用这些视角来匹配人物在场景中的朝向和站位。
+   - **示例**：
+     - 如果人物站在左侧面向右侧，优先选 "right45" 或 "side"。
+     - 如果人物背对镜头走向远方，优先选 "back"。
+     - 只有当人物正对镜头且无其他更好选择时，才使用 "front"。
+     - 只有当需要极小比例远景且无其他视角时，才使用 "wide"。
 
 输出结构 (JSON)：
 {{
-  "layout_reasoning": "简短的中文思考：分析场景结构，分配角色A在X位置，角色B在Y位置...",
+  "layout_reasoning": "简短的中文思考：分析场景结构，为了避免拥挤，将角色A安排在远景...",
   "steps": [
     {{
       "player_id": 123,
       "player_name": "角色名",
       "view_key": "right45",
-      "merge_pos": "将 image2 的[性别]人物增加到 image1 的[位置]",
+      "merge_pos": "将 image2 的[性别]人物增加到 image1 的[位置], [比例], [动作]",
       "merge_neg": "多行中文负面..."
     }}
   ]
@@ -1104,15 +1297,22 @@ def generate_merge_prompts(
     print("-" * 50)
 
     try:
-        completion = client.chat.completions.create(
-            model=llm_profile.model or "gpt-3.5-turbo",
-            messages=[
+        is_doubao = "volces.com" in llm_profile.base_url or "doubao" in model_name.lower()
+        
+        params = {
+            "model": llm_profile.model or "gpt-3.5-turbo",
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            temperature=0.7,
-            response_format={"type": "json_object"}
-        )
+            "temperature": 0.7,
+            "timeout": 120 # Increased timeout for video prompts
+        }
+        
+        if not is_doubao:
+            params["response_format"] = {"type": "json_object"}
+
+        completion = client.chat.completions.create(**params)
         
         content = completion.choices[0].message.content
         print("【LLM Merge Output】")
@@ -1201,6 +1401,7 @@ def generate_story_assets(story_content: str, style_preset=None, llm_profile=Non
     - scene_type（场景类型：Indoor / Outdoor / Special）
     - 基础场景描述（用于后续提示词生成）
     - 出场角色列表（必须是提取出的人物姓名）
+    - 角色对白（dialogues）：该场景中发生的对话内容，用于后续生成视频口型。必须是数组，包含 {{"role": "角色名", "content": "对白内容"}}。如果场景无对白，则为空数组。
 
 必须：
 
@@ -1213,12 +1414,33 @@ def generate_story_assets(story_content: str, style_preset=None, llm_profile=Non
 - 不要输出解释
 - 所有输出必须为合法 JSON
 - 你必须为每个场景给出 characters 字段（数组），列出该场景出镜的主要角色姓名。该数组中的姓名必须来自你输出的 characters 列表。
+- **角色引用一致性 (CRITICAL)**：
+    - `scenes[].characters` 数组中的名字，必须**严格等于** `characters[].player_name` 中定义的完整名字。
+    - `scenes[].dialogues[].role` 中的名字，必须**严格等于** `characters[].player_name` 中定义的完整名字。
+    - **禁止简化**：例如，如果 `characters` 中定义的是 "陈平安（少年）"，那么在场景引用和对白角色中，**必须**写 "陈平安（少年）"，**严禁**只写 "陈平安"。
+    - **禁止别名**：严禁使用 "少年"、"黑衣人" 等未在 `characters` 列表中显式定义的别名。所有出场人物必须先在 `characters` 列表中声明。
 - scenes[].episode 必须等于 {episode_start}（单幕生成）
 - scene_type 判定规则：
     - Indoor：明确室内/封闭空间（房间、车厢、走廊、实验室、控制室、地铁、商场、仓库等）
     - Outdoor：明确室外/开放空间（街道、广场、荒野、山林、天台、停车场、码头等）
     - Special：特殊空间/超自然/非典型（梦境、主神空间、传送通道、异次元、全息投影空间、纯UI空间、抽象背景、强概念装置空间等）
     - 若混合但主要发生在室内则Indoor，主要在室外则Outdoor，无法归类或明显超现实则Special。必须严格区分大小写。
+- **分镜优化规则 (Crucial)**：
+    - **单镜头人数限制**：默认情况下，**每个场景/镜头（Shot）最多只安排 2 名角色**。
+    - **多人对话拆分**：如果剧情涉及 3 人或以上对话（例如 A, B, C），请将其**拆分为连续的多个镜头**。
+        - 镜头1：A 与 B 对话。
+        - 镜头2：A 与 C 对话，或 B 与 C 对话。
+        - 确保每个镜头内的对话逻辑闭环，场景背景保持一致，仅替换人物。
+    - **战斗/特殊场景豁免**：如果是战斗、围攻、对峙等必须多人同框的特殊剧情，可以突破 2 人限制，但需在 `base_desc` 中注明“多人同框”。
+    - **单人镜头最大化**：在篇幅允许的情况下，**尽可能多地生成单人镜头**。单人镜头更容易实现高质量的面部特写和表演。
+    - **单人视点与构图暗示**：对于单人镜头，请在 `base_desc` 中明确暗示以下视点之一：
+        - **特写 (Close-up)**：描写面部表情、眼神。
+          - *重要约束*：如果是特写镜头，**严禁在该场景中绑定 2 名及以上角色**。特写只能聚焦于 1 人。如果原剧情是多人对话，必须拆分为单人特写反应镜头。
+          - *场景描述配合*：必须强调“背景虚化”、“景深”、“面部特写背景”，严禁使用大广角远景描述。
+        - **正视全景 (Wide)**：表现人物站姿气场。
+        - **俯视 (Aerial)**：表现人物渺小或局势。
+        - **仰视 (Low Angle)**：表现人物高大或压迫感。
+    - **比例控制**：当场景人数 <= 2 时，**不要**刻意要求缩小人物比例（除非是超远景）。保持人物主体清晰可见。
 """
     
     user_prompt = f"""
@@ -1242,16 +1464,40 @@ def generate_story_assets(story_content: str, style_preset=None, llm_profile=Non
       "shot": 1,
       "scene_type": "Indoor/Outdoor/Special",
       "base_desc": "",
-      "characters": ["角色A", "角色B"]
+      "characters": ["角色A", "角色B"],
+      "dialogues": [
+        {{
+            "role": "角色A",
+            "content": "这里写该角色说的话..."
+        }}
+      ]
     }}
   ]
 }}
 
 说明：
 1）player_mark 必须是：详细的外貌 + 属性备注，不包含提示词标签，不包含 prompt，不包含合成说明，不包含结构标签
-2）base_desc 必须是：场景基础描述，世界观 + 氛围 + 关键元素，不包含提示词结构，不包含负面提示词
-3）scenes[].characters 必须是 characters[].player_name 的子集，如场景无人则为空数组 []
-4）scene_type 必须是 "Indoor", "Outdoor" 或 "Special"
+2）关于角色命名规范（严格执行）：
+   格式必须为：姓名（年龄阶段） 或 姓名（年龄阶段）（特定状态）
+   - 姓名：角色本名，不带修饰。
+   - 年龄阶段（必选）：只能从以下词汇中选择一个：[幼年, 少年, 青年, 中年, 老年]。
+   - 特定状态（可选）：仅当角色身份或服装有重大特殊性时添加，如：(戎装)、(红衣)、(乞丐装)、(掌柜)。
+   
+   错误示例：
+   - 陶掌柜（中年·杂货铺主） -> 错误，使用了"·"且描述过长
+   - 李逍遥（少年剑客） -> 错误，"少年剑客"未拆分
+   
+   正确示例：
+   - 陈平安（少年）
+   - 陶掌柜（中年）（杂货铺主）
+   - 李逍遥（青年）
+   - 林月如（青年）（戎装）
+   
+   相应的 `player_mark` 必须准确描述该时期的特定年龄、外貌和着装。
+3）base_desc 必须是：场景基础描述，世界观 + 氛围 + 关键元素，不包含提示词结构，不包含负面提示词
+4）scenes[].characters 必须是 characters[].player_name 的子集，如场景无人则为空数组 []
+5）scene_type 必须是 "Indoor", "Outdoor" 或 "Special"
+6）dialogues 用于口型生成，请根据剧情合理分配对白。
 """
 
     # --- Debug Logging Start ---
@@ -1266,14 +1512,21 @@ def generate_story_assets(story_content: str, style_preset=None, llm_profile=Non
     # --- Debug Logging End ---
 
     try:
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=[
+        is_doubao = "volces.com" in llm_profile.base_url or "doubao" in model_name.lower()
+        
+        params = {
+            "model": model_name,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            response_format={"type": "json_object"}
-        )
+            "timeout": 120 # Increased timeout for scene generation
+        }
+        
+        if not is_doubao:
+            params["response_format"] = {"type": "json_object"}
+            
+        response = client.chat.completions.create(**params)
         
         content = response.choices[0].message.content
         
@@ -1289,30 +1542,58 @@ def generate_story_assets(story_content: str, style_preset=None, llm_profile=Non
         usage = response.usage.model_dump() if response.usage else {}
         
         result = {}
+        # Robust JSON extraction
+        # Handle Doubao/LLM sometimes returning Chinese quotes or trailing commas or text after JSON
+        cleaned_content = content.strip()
+        
+        # 1. Try direct parse
         try:
-            result = json.loads(content)
+            result = json.loads(cleaned_content)
         except json.JSONDecodeError:
-            match = re.search(r'```json\s*(\{.*?\})\s*```', content, re.DOTALL)
+            # 2. Try regex extract ```json ... ```
+            match = re.search(r'```json\s*(\{.*?\})\s*```', cleaned_content, re.DOTALL)
             if match:
-                result = json.loads(match.group(1))
-            else:
-                match = re.search(r'\{.*\}', content, re.DOTALL)
+                try:
+                    result = json.loads(match.group(1))
+                except json.JSONDecodeError:
+                    pass
+            
+            # 3. Try regex extract first { ... } block
+            if not result:
+                match = re.search(r'\{.*\}', cleaned_content, re.DOTALL)
                 if match:
-                    result = json.loads(match.group(0))
-                else:
-                    # Retry logic
+                    try:
+                        result = json.loads(match.group(0))
+                    except json.JSONDecodeError:
+                         # 4. Try fixing common JSON errors (like Chinese quotes)
+                         json_str = match.group(0)
+                         # Replace Chinese quotes
+                         json_str = json_str.replace('“', '"').replace('”', '"')
+                         # Remove trailing commas (simple regex approach)
+                         json_str = re.sub(r',\s*([\]}])', r'\1', json_str)
+                         try:
+                             result = json.loads(json_str)
+                         except:
+                             pass
+            
+            # 5. Retry logic if still failed
+            if not result:
                     print(" [Warning] JSON Parse Failed. Attempting repair retry...")
                     repair_prompt = "上一次输出不是合法的 JSON 格式。请修正格式，只输出纯 JSON，不要包含 Markdown 代码块或其他文字。"
-                    repair_resp = client.chat.completions.create(
-                        model=model_name,
-                        messages=[
+                    
+                    repair_params = {
+                        "model": model_name,
+                        "messages": [
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt},
                             {"role": "assistant", "content": content},
                             {"role": "user", "content": repair_prompt}
-                        ],
-                        response_format={"type": "json_object"}
-                    )
+                        ]
+                    }
+                    if not is_doubao:
+                         repair_params["response_format"] = {"type": "json_object"}
+                         
+                    repair_resp = client.chat.completions.create(**repair_params)
                     repair_content = repair_resp.choices[0].message.content
                     print(f" [LLM Repair Response] {repair_content}")
                     try:

@@ -20,24 +20,36 @@ async def wait_for_task(db: Session, task_id: int, timeout: int = 300) -> bool:
     """
     Polls task status until done or failed.
     Returns True if done, False if failed or timeout.
+    Non-blocking version: yields control to event loop.
     """
     start_time = time.time()
+    
     while time.time() - start_time < timeout:
-        # Refresh task from DB
-        # We need a fresh session or refresh the object?
-        # Using the passed db session might be stale if we don't refresh.
-        # But for safety in a long loop, let's query directly.
-        task = db.query(models.Task).filter(models.Task.id == task_id).first()
-        if not task:
-            return False
+        # Yield control to allow other async tasks (like WebUI requests) to run
+        await asyncio.sleep(2) 
+        
+        try:
+            # OPTIMIZATION:
+            # We must expire the session objects to ensure we fetch fresh data from DB,
+            # otherwise SQLAlchemy might return cached 'queued' status forever in this transaction.
+            db.expire_all()
             
-        if task.status == 'done':
-            return True
-        if task.status == 'failed':
-            return False
+            task = db.query(models.Task).filter(models.Task.id == task_id).first()
             
-        await asyncio.sleep(2)
-        db.refresh(task) # Important to see updates
+            if not task:
+                return False
+                
+            if task.status == 'done':
+                return True
+            if task.status == 'failed':
+                return False
+                
+            # Optional: commit to keep transaction short? 
+            # No, we are in a loop. db.expire_all() is enough to refresh.
+            
+        except Exception as e:
+            print(f"Error checking task status: {e}")
+            return False
         
     return False
 
@@ -83,8 +95,13 @@ async def process_batch_gen_base(project_id: int):
                 db.commit()
                 
                 # Wait for Prompt
+                # Use a shorter sleep interval for responsive checking
                 success = await wait_for_task(db, task.id)
                 db.refresh(task)
+                
+                # Small yield to let other tasks/web requests breathe
+                await asyncio.sleep(0.1)
+                
                 if not success:
                     # Check for Global Stop
                     if task.result_json and "Global Stop" in task.result_json:
@@ -102,9 +119,9 @@ async def process_batch_gen_base(project_id: int):
                 sys_conf = {c.key: c.value for c in sys_configs}
                 
                 # Fetch settings or defaults
-                default_seed = int(sys_conf.get('default_seed', 264590))
-                default_width = int(sys_conf.get('default_width', 1024))
-                default_height = int(sys_conf.get('default_height', 768))
+                default_seed = int(sys_conf.get('player_gen_seed', 264590))
+                default_width = int(sys_conf.get('player_gen_width', 1024))
+                default_height = int(sys_conf.get('player_gen_height', 768))
                 
                 payload = {
                     "seed": default_seed,
@@ -127,6 +144,9 @@ async def process_batch_gen_base(project_id: int):
                 
                 success_base = await wait_for_task(db, task_base.id, timeout=600) # Longer timeout for image gen
                 db.refresh(task_base)
+                
+                await asyncio.sleep(0.1) # Yield control
+                
                 if success_base:
                     log_system(db, "[一键生成所有基图]", current_progress, f"角色 {player.player_name} 基图生成成功")
                     # Update status is handled by task manager, but we can double check?
@@ -191,9 +211,9 @@ async def process_batch_gen_complete(project_id: int):
                 sys_conf = {c.key: c.value for c in sys_configs}
                 
                 # Fetch settings or defaults
-                default_seed = int(sys_conf.get('default_seed', 264590))
-                default_width = int(sys_conf.get('default_width', 1024))
-                default_height = int(sys_conf.get('default_height', 768))
+                default_seed = int(sys_conf.get('player_gen_seed', 264590))
+                default_width = int(sys_conf.get('player_gen_width', 1024))
+                default_height = int(sys_conf.get('player_gen_height', 768))
 
                 payload = {
                     "seed": default_seed,
@@ -258,38 +278,51 @@ async def process_batch_gen_scene_base(project_id: int):
         log_system(db, "[一键生成所有场景基图]", f"[0/{total}]", f"开始处理项目 {project.name} 的批量场景基图生成任务")
         
         for i, scene in enumerate(scenes):
+            # Refresh scene object to get latest status
+            db.refresh(scene)
+            
             current_progress = f"[{i+1}/{total}]"
             
-            # Skip if already generated or completed
+            # Skip if already generated (has base image)
             if scene.base_image_path:
                 log_system(db, "[一键生成所有场景基图]", current_progress, f"场景 {scene.name} 已有基图，跳过")
                 continue
                 
-            if scene.status == 'draft' or not scene.base_image_path:
+            # Process if no base image (Draft or Generating but failed/stuck)
+            if not scene.base_image_path:
                 # --- Prompt ---
-                log_system(db, "[一键生成所有场景基图]", current_progress, f"正在为 {scene.name} 生成提示词...")
-                task_p = models.Task(project_id=project_id, scene_id=scene.id, task_type="GEN_SCENE_PROMPT", status="queued", payload_json="{}")
-                db.add(task_p)
-                db.commit()
-                
-                success_p = await wait_for_task(db, task_p.id)
-                db.refresh(task_p)
-                if not success_p:
-                    if task_p.result_json and "Global Stop" in task_p.result_json:
-                        log_system(db, "[一键生成所有场景基图]", current_progress, "用户终止任务，批量处理停止。", "WARNING")
-                        return
-                    log_system(db, "[一键生成所有场景基图]", current_progress, f"场景 {scene.name} 提示词失败", "ERROR")
-                    continue
+                if not scene.prompt_pos:
+                    log_system(db, "[一键生成所有场景基图]", current_progress, f"正在为 {scene.name} 生成提示词...")
+                    task_p = models.Task(project_id=project_id, scene_id=scene.id, task_type="GEN_SCENE_PROMPT", status="queued", payload_json="{}")
+                    db.add(task_p)
+                    db.commit()
+                    
+                    success_p = await wait_for_task(db, task_p.id)
+                    db.refresh(task_p)
+                    
+                    await asyncio.sleep(0.1) # Yield control
+                    
+                    if not success_p:
+                        if task_p.result_json and "Global Stop" in task_p.result_json:
+                            log_system(db, "[一键生成所有场景基图]", current_progress, "用户终止任务，批量处理停止。", "WARNING")
+                            return
+                        log_system(db, "[一键生成所有场景基图]", current_progress, f"场景 {scene.name} 提示词失败", "ERROR")
+                        continue
+                    
+                    # REFRESH SCENE! The previous task updated the scene prompt in DB
+                    # But our local 'scene' object is stale.
+                    db.refresh(scene)
                 
                 # --- Base ---
                 log_system(db, "[一键生成所有场景基图]", current_progress, f"提示词成功，正在生成基图...")
+                
                 sys_configs = db.query(models.SystemConfig).all()
                 sys_conf = {c.key: c.value for c in sys_configs}
                 
                 # Fetch settings or defaults for scene
-                default_seed = int(sys_conf.get('default_seed', 264590))
-                default_width = int(sys_conf.get('default_width', 1344)) # Scene wider default
-                default_height = int(sys_conf.get('default_height', 768))
+                default_seed = int(sys_conf.get('scene_gen_seed', 264590))
+                default_width = int(sys_conf.get('scene_gen_width', 1024))
+                default_height = int(sys_conf.get('scene_gen_height', 768))
 
                 payload = {
                     "seed": default_seed,
@@ -305,6 +338,9 @@ async def process_batch_gen_scene_base(project_id: int):
                 
                 success_b = await wait_for_task(db, task_b.id, timeout=600)
                 db.refresh(task_b)
+                
+                await asyncio.sleep(0.1) # Yield control
+                
                 if not success_b:
                     if task_b.result_json and "Global Stop" in task_b.result_json:
                         log_system(db, "[一键生成所有场景基图]", current_progress, "用户终止任务，批量处理停止。", "WARNING")
@@ -380,7 +416,7 @@ async def process_batch_gen_scene_merge(project_id: int):
             # Use default seed from system config
             sys_configs = db.query(models.SystemConfig).all()
             sys_conf = {c.key: c.value for c in sys_configs}
-            default_seed = int(sys_conf.get('default_seed', 264590))
+            default_seed = int(sys_conf.get('scene_gen_seed', 264590))
             
             payload = {"seed": default_seed} 
             
@@ -398,6 +434,8 @@ async def process_batch_gen_scene_merge(project_id: int):
             
             success_m = await wait_for_task(db, task_m.id, timeout=1200) # Merge can take long if multiple chars
             db.refresh(task_m)
+            
+            await asyncio.sleep(0.1) # Yield control
             
             if not success_m:
                 if task_m.result_json and "Global Stop" in task_m.result_json:
@@ -613,7 +651,7 @@ async def process_batch_gen_video(project_id: int):
             sys_conf = {c.key: c.value for c in sys_configs}
             
             # Default Params
-            default_seed = int(sys_conf.get('default_seed', 264590))
+            default_seed = int(sys_conf.get('video_gen_seed', 264590))
             
             # Video params - Use DB values if available (from LLM), otherwise defaults
             # User requirement: Use LLM returned Length and FPS

@@ -227,7 +227,7 @@ function confirmDelete(id, name) {
                 <!-- Input State -->
                 <div id="autoGenInputState">
                     <p class="text-secondary small mb-3">
-                        根据剧情描述，AI 将自动分析并创建项目所需的<span class="text-dark fw-bold">角色</span>和<span class="text-dark fw-bold">场景</span>。
+                        根据剧情描述，AI 将自动分析并创建项目所需的<span class="text-dark fw-bold">角色</span>、<span class="text-dark fw-bold">场景</span>和<span class="text-dark fw-bold">对话</span>。
                         生成过程完全遵循项目锁定的画风。
                     </p>
                     
@@ -458,7 +458,7 @@ function startPolling(taskId) {
                     // Parse result
                     try {
                         const result = JSON.parse(task.result_json);
-                        let msg = `成功写入 ${result.scenes_created} 个场景，新增 ${result.players_created} 个角色`;
+                        let msg = `成功写入 ${result.scenes_created} 个场景，新增 ${result.players_created} 个角色，并提取相关对话`;
                         if (result.players_reused > 0) {
                             msg += `，复用 ${result.players_reused} 个角色`;
                         }
@@ -475,7 +475,14 @@ function startPolling(taskId) {
                         const p = document.createElement('p');
                         p.className = "text-secondary small mt-2";
                         p.textContent = msg;
-                        document.getElementById('autoGenSuccessState').appendChild(p);
+                        
+                        // Clear previous content to avoid duplicates
+                        const successState = document.getElementById('autoGenSuccessState');
+                        // Remove existing 'p' elements to prevent stacking
+                        const existingP = successState.querySelector('p.text-secondary.small.mt-2');
+                        if (existingP) existingP.remove();
+                        
+                        successState.appendChild(p);
                         
                     } catch(e) {
                         console.error("Error parsing result", e);

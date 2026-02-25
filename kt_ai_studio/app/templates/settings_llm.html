@@ -43,6 +43,8 @@
                     <td>
                         {% if profile.provider == 'deepseek' %}
                         <span class="badge bg-info-subtle text-info border border-info-subtle">DeepSeek</span>
+                        {% elif profile.provider == 'doubao' %}
+                        <span class="badge bg-warning-subtle text-warning border border-warning-subtle">Doubao</span>
                         {% else %}
                         <span class="badge bg-success-subtle text-success border border-success-subtle">OpenAI</span>
                         {% endif %}
@@ -52,7 +54,7 @@
                     <td class="text-end pe-4">
                         <div class="btn-group">
                             <button type="button" class="btn btn-sm btn-outline-secondary border-0" 
-                                    onclick="editProfile({{ profile.id }})" 
+                                    onclick="editProfile('{{ profile.id }}')" 
                                     title="编辑">
                                 <i class="bi bi-pencil"></i>
                             </button>
@@ -98,6 +100,7 @@
                 <select name="provider" id="provider" class="form-select bg-light border-0" required onchange="updateDefaults()">
                     <option value="deepseek">DeepSeek</option>
                     <option value="openai">OpenAI</option>
+                    <option value="doubao">Doubao (豆包)</option>
                 </select>
             </div>
             
@@ -153,6 +156,9 @@
         } else if (provider === 'openai') {
             baseUrl.value = "https://api.openai.com/v1";
             model.value = "gpt-4o";
+        } else if (provider === 'doubao') {
+            baseUrl.value = "https://ark.cn-beijing.volces.com/api/v3";
+            model.value = "doubao-lite-32k-character-250228";
         }
     }
 

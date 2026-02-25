@@ -49,15 +49,16 @@ async def video_manage_page(request: Request, scene_id: int, db: Session = Depen
         db.add(video)
         db.commit()
         db.refresh(video)
-    elif video.status == "draft":
-        # Sync defaults if video is in draft mode
-        # This ensures that if the user updates system settings, draft videos reflect those changes
-        video.width = default_width
-        video.height = default_height
-        video.length = default_length
-        video.fps = default_fps
-        video.seed = default_seed
-        db.commit()
+    # elif video.status == "draft":
+    #     # Sync defaults if video is in draft mode
+    #     # This ensures that if the user updates system settings, draft videos reflect those changes
+    #     # COMMENTED OUT: This was overwriting LLM generated params or user manual edits on page reload!
+    #     # video.width = default_width
+    #     # video.height = default_height
+    #     # video.length = default_length
+    #     # video.fps = default_fps
+    #     # video.seed = default_seed
+    #     # db.commit()
 
     # Get Tasks for this video
     tasks = db.query(models.Task).filter(models.Task.video_id == video.id).order_by(models.Task.created_at.desc()).all()

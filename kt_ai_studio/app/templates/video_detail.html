@@ -392,7 +392,7 @@
         forceInterruptModal.show();
     }
 
-    async function saveSettings() {
+    async function saveSettings(silent = false) {
         const form = document.getElementById('videoSettingsForm');
         const formData = new FormData(form);
         
@@ -401,57 +401,75 @@
                 method: 'POST',
                 body: formData
             });
-            if (res.ok) {
-                // showToast("设置已保存", "success");
+            const data = await res.json();
+            if (data.status === 'success') {
+                if (!silent) showToast("设置已保存", "success");
                 return true;
             } else {
-                showToast("保存失败", "error");
+                showToast("保存失败: " + data.error, "error");
                 return false;
             }
         } catch (e) {
-            showToast("网络错误", "error");
+            showToast("保存请求失败", "error");
             return false;
         }
     }
 
     async function generatePrompts() {
-        showToast("正在请求 LLM 生成提示词...", "info");
-        try {
-            const res = await fetch(`/videos/${videoId}/generate_prompts`, { method: 'POST' });
-            const data = await res.json();
-            
-            if (data.status === 'success') {
-                showToast("提示词生成任务已提交", "success");
-                // Wait a bit for DB to commit, then refresh the task list
-                setTimeout(() => updatePageContent(), 1000);
-            } else {
-                showToast("提交失败: " + data.error, "error");
-            }
-        } catch (e) {
-            showToast("请求失败", "error");
-        }
-    }
-
-    async function saveAndGenerate() {
-        // 1. Save Settings
-        const saved = await saveSettings();
-        if (!saved) return;
-        
-        // 2. Open Modal & Initialize
+        // 1. Show Modal
         const runningUI = document.getElementById('gen-modal-running-ui');
         const errorUI = document.getElementById('gen-modal-error-ui');
         const successUI = document.getElementById('gen-modal-success-ui');
         const statusText = document.getElementById('gen-modal-status-text');
         const detailText = document.getElementById('gen-modal-detail-text');
         const progressBar = document.getElementById('gen-modal-progress-bar');
-        const errorMsg = document.getElementById('gen-modal-error-msg');
         
         runningUI.style.display = 'block';
         errorUI.style.display = 'none';
         successUI.style.display = 'none';
+        
         statusText.innerText = "正在初始化...";
-        detailText.innerText = "正在提交任务...";
+        detailText.innerText = "正在请求 LLM 生成提示词...";
         progressBar.style.width = "0%";
+        
+        // Use the existing modal but change title slightly via JS if needed, or just reuse
+        const modalTitle = document.querySelector('#videoGenerationModal .modal-title');
+        const originalTitle = modalTitle.innerHTML;
+        modalTitle.innerHTML = '<i class="bi bi-magic me-2"></i>生成提示词';
+        
+        videoGenerationModal.show();
+        
+        try {
+            const res = await fetch(`/videos/${videoId}/generate_prompts`, { method: 'POST' });
+            const data = await res.json();
+            
+            if (data.status === 'success') {
+                const taskId = data.task_id;
+                // Monitor task
+                monitorTaskInModal(taskId, true); // true = isPromptGeneration
+            } else {
+                throw new Error(data.error || "启动失败");
+            }
+        } catch (e) {
+            console.error(e);
+            runningUI.style.display = 'none';
+            errorUI.style.display = 'block';
+            document.getElementById('gen-modal-error-msg').innerText = e.message;
+            // Restore title on close/error
+            setTimeout(() => { modalTitle.innerHTML = originalTitle; }, 500);
+        }
+    }
+
+    async function saveAndGenerate() {
+        // 1. Save Settings First!
+        const saved = await saveSettings(true); // silent=true
+        if (!saved) return;
+        
+        // 2. Open Modal & Initialize
+        const runningUI = document.getElementById('gen-modal-running-ui');
+        // ... (existing code) ...
+        const modalTitle = document.querySelector('#videoGenerationModal .modal-title');
+        modalTitle.innerHTML = '<i class="bi bi-film me-2"></i>视频生成';
         
         videoGenerationModal.show();
 
@@ -462,21 +480,17 @@
             
             if (data.status === 'success') {
                 const taskId = data.task_id;
-                // Immediately refresh background list so the new task appears in the history card
                 setTimeout(() => updatePageContent(), 1000);
-                monitorTaskInModal(taskId);
+                monitorTaskInModal(taskId, false); // false = isVideoGeneration
             } else {
                 throw new Error(data.error || "启动失败");
             }
         } catch (e) {
-            console.error(e);
-            runningUI.style.display = 'none';
-            errorUI.style.display = 'block';
-            errorMsg.innerText = e.message;
+            // ... (existing error handling) ...
         }
     }
 
-    function monitorTaskInModal(taskId) {
+    function monitorTaskInModal(taskId, isPromptGeneration = false) {
         const runningUI = document.getElementById('gen-modal-running-ui');
         const errorUI = document.getElementById('gen-modal-error-ui');
         const successUI = document.getElementById('gen-modal-success-ui');
@@ -500,11 +514,9 @@
                         if (task.status === 'queued') {
                             statusText.innerText = "任务排队中...";
                         } else {
-                            statusText.innerText = "正在生成视频...";
-                            // Parse detailed message if available
+                            statusText.innerText = isPromptGeneration ? "正在思考提示词..." : "正在生成视频...";
                             if (task.result_json) {
                                 try {
-                                    // Sometimes result_json is object, sometimes string
                                     const result = (typeof task.result_json === 'string') ? JSON.parse(task.result_json) : task.result_json;
                                     // if (result.status_message) statusText.innerText = result.status_message;
                                 } catch(e) {}
@@ -516,7 +528,25 @@
                         clearInterval(check);
                         runningUI.style.display = 'none';
                         successUI.style.display = 'block';
-                        // Refresh background tasks list too
+                        
+                        // Customize success message
+                        const successTitle = successUI.querySelector('h6');
+                        const successDesc = successUI.querySelector('p');
+                        const successBtn = successUI.querySelector('button');
+                        
+                        if (isPromptGeneration) {
+                            successTitle.innerText = "提示词生成完成！";
+                            successDesc.innerText = "页面将自动刷新并填入最新的提示词。";
+                            successBtn.innerText = "确认并刷新";
+                            successBtn.onclick = () => window.location.reload();
+                        } else {
+                            successTitle.innerText = "视频生成完成！";
+                            successDesc.innerText = "您可以现在查看生成的结果了。";
+                            successBtn.innerText = "查看结果";
+                            successBtn.onclick = () => window.location.reload();
+                        }
+                        
+                        // Refresh background tasks list
                         updatePageContent();
                         
                     } else if (task.status === 'failed') {
@@ -531,7 +561,7 @@
                     runningUI.style.display = 'none';
                     errorUI.style.display = 'block';
                     document.getElementById('gen-modal-error-msg').innerText = e.message;
-                    updatePageContent(); // Refresh list on failure too
+                    updatePageContent(); 
                 } else if (errorCount > 10) {
                      clearInterval(check);
                      runningUI.style.display = 'none';

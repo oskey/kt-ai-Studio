@@ -333,11 +333,15 @@ class TaskManager:
         task.progress = 30
         db.commit()
             
+        # Get player count for scene
+        player_count = db.query(models.ScenePlayerLink).filter(models.ScenePlayerLink.scene_id == scene.id).count()
+        
         prompts = generate_scene_prompts(
             scene.base_desc,
             style_preset=style,
             llm_profile=llm_profile,
-            scene_type=scene.scene_type or "Indoor"
+            scene_type=scene.scene_type or "Indoor",
+            player_count=player_count
         )
         
         task.progress = 80
@@ -600,7 +604,8 @@ class TaskManager:
                 scene_desc=None,
                 prompt_pos=None,
                 prompt_neg=None,
-                base_image_path=None
+                base_image_path=None,
+                dialogues_json=json.dumps(sc.get("dialogues", []), ensure_ascii=False)
             )
             db.add(scene)
             db.flush() 
@@ -651,6 +656,16 @@ class TaskManager:
             
         task.result_json = json.dumps(result)
         task.progress = 100
+        
+        # Log to System
+        log_content = (
+            f"剧情生成完成。创建角色: {created_players} (复用 {reused_players}), "
+            f"创建场景: {created_scenes}。"
+        )
+        if scene_warnings:
+            log_content += f" 警告: {'; '.join(scene_warnings[:3])}..."
+            
+        self.log_system(db, "自动剧情", "100%", log_content)
 
     def _handle_gen_video_prompt(self, db: Session, task: models.Task):
         """
@@ -661,6 +676,36 @@ class TaskManager:
             raise ValueError("Task has no associated video")
             
         scene = video.scene
+        
+        # Ensure context is refreshed with latest dialogues
+        # Sometimes dialogues_json is updated after context generation
+        if scene.dialogues_json:
+            try:
+                # Parse existing context
+                ctx = {}
+                if scene.video_llm_context:
+                    try:
+                        ctx = json.loads(scene.video_llm_context)
+                    except:
+                        pass
+                
+                # If scene key missing, init it
+                if "scene" not in ctx:
+                    ctx["scene"] = {}
+                
+                # Force update dialogues from DB
+                try:
+                    dialogues_data = json.loads(scene.dialogues_json)
+                    ctx["scene"]["dialogues"] = dialogues_data
+                    # Save back updated context
+                    scene.video_llm_context = json.dumps(ctx, ensure_ascii=False, indent=2)
+                    db.commit()
+                    db.refresh(scene)
+                except Exception as e:
+                    print(f"Failed to refresh dialogues in context: {e}")
+            except Exception as e:
+                print(f"Context refresh error: {e}")
+
         if not scene.video_llm_context:
             raise ValueError("Scene context missing")
             
@@ -693,20 +738,85 @@ class TaskManager:
         video.prompt_neg = prompts.get("prompt_neg")
         
         # Update FPS/Length if provided by LLM
-        if "fps" in prompts and prompts["fps"]:
-            try:
-                video.fps = int(prompts["fps"])
-            except:
-                pass
-                
-        if "length" in prompts and prompts["length"]:
-            try:
-                video.length = int(prompts["length"])
-            except:
-                pass
-
-        # video.status = "prompt_generated" 
+        print(f"[LLM] Prompts result: {prompts}")
         
+        try:
+            # We must query the video again to ensure it's attached to the session
+            # task.video might be detached or stale
+            v_update = db.query(models.Video).filter(models.Video.id == video.id).first()
+            if v_update:
+                # Update FPS/Length if provided by LLM
+                # Logic: Only update if user hasn't manually set a custom value
+                # or if the current value is the system default.
+                
+                # Default values (hardcoded fallback)
+                DEFAULT_FPS = 16
+                DEFAULT_LENGTH = 81
+                
+                # Check system config if available
+                sys_configs = db.query(models.SystemConfig).all()
+                sys_conf = {c.key: c.value for c in sys_configs}
+                sys_default_fps = int(sys_conf.get('video_gen_fps', DEFAULT_FPS))
+                sys_default_len = int(sys_conf.get('video_gen_length', DEFAULT_LENGTH))
+                
+                print(f"[LLM] Check overwrite: Current fps={v_update.fps}, Sys Default={sys_default_fps}")
+                print(f"[LLM] Check overwrite: Current len={v_update.length}, Sys Default={sys_default_len}")
+
+                if "fps" in prompts:
+                    try:
+                        fps_val = int(prompts["fps"])
+                        if fps_val > 0:
+                            # Update logic: 
+                            # Always update FPS/Length from LLM, unless user specifically requests to lock it (which we don't have a flag for yet).
+                            # The previous logic of checking against defaults was confusing because users might want LLM to optimize parameters 
+                            # even if they temporarily changed them.
+                            # Let's revert to ALWAYS updating for now, as that seems to be the expected behavior for "Generate Prompts" action.
+                            
+                            v_update.fps = fps_val
+                            print(f"[LLM] Updated video.fps to {fps_val}")
+                            
+                            # if v_update.fps == 0 or v_update.fps == sys_default_fps:
+                            #     v_update.fps = fps_val
+                            #     print(f"[LLM] Updated video.fps to {fps_val}")
+                            # else:
+                            #     print(f"[LLM] Skipped fps update: user set {v_update.fps} != default {sys_default_fps}")
+                    except Exception as e:
+                        print(f"[LLM] Failed to update fps: {e}")
+                        pass
+                        
+                if "length" in prompts:
+                    try:
+                        len_val = int(prompts["length"])
+                        if len_val > 0:
+                            v_update.length = len_val
+                            print(f"[LLM] Updated video.length to {len_val}")
+                            
+                            # if v_update.length == 0 or v_update.length == sys_default_len:
+                            #     v_update.length = len_val
+                            #     print(f"[LLM] Updated video.length to {len_val}")
+                            # else:
+                            #     print(f"[LLM] Skipped length update: user set {v_update.length} != default {sys_default_len}")
+                    except Exception as e:
+                        print(f"[LLM] Failed to update length: {e}")
+                        pass
+                
+                v_update.prompt_pos = prompts.get("prompt_pos")
+                v_update.prompt_neg = prompts.get("prompt_neg")
+                
+                db.add(v_update)
+                db.commit()
+                db.refresh(v_update)
+                print(f"[LLM] Refreshed video: fps={v_update.fps}, length={v_update.length}")
+            else:
+                 print("[LLM] Video not found for update!")
+
+        except Exception as e:
+             print(f"[LLM] DB Commit failed: {e}")
+             db.rollback()
+        
+        # Also update result_json with these values so frontend can see them immediately if polling task result
+        task.result_json = json.dumps(prompts)
+        db.add(task)
         db.commit()
 
     def _handle_gen_video(self, db: Session, task: models.Task):
@@ -1038,13 +1148,21 @@ class TaskManager:
                 if match:
                     shot_type = match.group(1).strip()
             
+            dialogues = []
+            if scene.dialogues_json:
+                try:
+                    dialogues = json.loads(scene.dialogues_json)
+                except:
+                    pass
+
             video_context = {
                 "scene": {
                     "name": scene.name,
                     "type": scene.scene_type,
                     "base_desc": scene.base_desc,
                     "visual_desc": scene.scene_desc, 
-                    "shot_type": shot_type
+                    "shot_type": shot_type,
+                    "dialogues": dialogues
                 },
                 "characters": []
             }
@@ -1062,6 +1180,11 @@ class TaskManager:
                 
             scene.video_llm_context = json.dumps(video_context, ensure_ascii=False, indent=2)
             print(f"[Video Context] Generated for Scene {scene.id}")
+            
+            # Auto-generate video prompt after merge
+            if dialogues and len(dialogues) > 0:
+                 # Trigger generation if dialogues exist
+                 pass
             
         except Exception as e:
             print(f"Failed to generate video context: {e}")

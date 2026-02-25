@@ -110,6 +110,13 @@ def check_and_migrate_db():
             else:
                 print("Schema check: video_llm_context column exists.")
 
+            if "dialogues_json" not in column_names:
+                print("Migrating: Adding dialogues_json column to kt_ai_scene...")
+                conn.execute(text("ALTER TABLE kt_ai_scene ADD COLUMN dialogues_json TEXT"))
+                print("Migration successful: dialogues_json added.")
+            else:
+                print("Schema check: dialogues_json column exists.")
+
         except Exception as e:
             print(f"Migration check failed for merged_image_path/prompts: {e}")
 

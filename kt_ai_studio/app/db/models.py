@@ -75,6 +75,7 @@ class Scene(Base):
     merged_image_path = Column(Text, nullable=True) # Final merged result with characters
     merged_prompts_json = Column(Text, nullable=True) # Array of prompts used for merging each character
     video_llm_context = Column(Text, nullable=True) # Context for video generation (scene + characters + action)
+    dialogues_json = Column(Text, nullable=True) # JSON Array of dialogues: [{"role": "Name", "content": "Hello"}]
     
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -107,6 +108,9 @@ class Video(Base):
     height = Column(Integer, default=640)
     length = Column(Integer, default=81)
     fps = Column(Integer, default=16)
+    
+    # Store LLM returned parameters separately if needed, but usually we just overwrite length/fps
+    # Or maybe length/fps here are the user settings, and we overwrite them with LLM suggestions?
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
