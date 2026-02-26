@@ -256,6 +256,22 @@ function confirmDelete(id, name) {
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Single Player Mode Option -->
+                        <div class="mb-4">
+                            <div class="form-check form-switch p-0 d-flex align-items-center bg-light rounded-3 p-3">
+                                <label class="form-check-label flex-grow-1 cursor-pointer" for="autoGenSingleOnly">
+                                    <span class="fw-bold text-dark d-block mb-1">仅生成单人场景 (讲故事模式)</span>
+                                    <span class="text-secondary small d-block" style="line-height: 1.4;">
+                                        勾选后，AI 将强制把多人对话拆解为连续的单人镜头。
+                                        <br>场景只绑定1名角色，优选特写/近景，确保画面焦点集中。
+                                    </span>
+                                </label>
+                                <div class="form-check ms-3">
+                                    <input class="form-check-input" type="checkbox" id="autoGenSingleOnly" style="width: 3em; height: 1.5em;">
+                                </div>
+                            </div>
+                        </div>
                         
                         <div class="mb-4">
                             <label class="text-label mb-2">生成模式</label>
@@ -377,6 +393,7 @@ document.getElementById('autoGenStoryForm').addEventListener('submit', function(
     const episode_start = parseInt(document.getElementById('autoGenEpisodeStart').value) || 1;
     const max_characters = parseInt(document.getElementById('autoGenMaxChars').value) || 5;
     const max_scenes = parseInt(document.getElementById('autoGenMaxScenes').value) || 10;
+    const single_only = document.getElementById('autoGenSingleOnly').checked;
     
     if (!content.trim()) {
         alert("请输入剧情描述");
@@ -389,7 +406,7 @@ document.getElementById('autoGenStoryForm').addEventListener('submit', function(
     document.getElementById('autoGenCloseBtn').disabled = true; // Prevent closing
     
     appendLog("提交任务请求...");
-    appendLog(`配置: 模式=${mode}, 起始幕=${episode_start}, 最大角色=${max_characters}, 最大场景=${max_scenes}`);
+    appendLog(`配置: 模式=${mode}, 起始幕=${episode_start}, 最大角色=${max_characters}, 最大场景=${max_scenes}, 单人模式=${single_only}`);
     
     fetch(`/projects/${projectId}/auto_generate_story`, {
         method: 'POST',
@@ -399,7 +416,8 @@ document.getElementById('autoGenStoryForm').addEventListener('submit', function(
             mode: mode,
             episode_start: episode_start,
             max_characters: max_characters,
-            max_scenes: max_scenes
+            max_scenes: max_scenes,
+            single_only: single_only
         })
     })
     .then(response => response.json())

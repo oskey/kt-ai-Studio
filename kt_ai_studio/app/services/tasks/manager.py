@@ -467,6 +467,7 @@ class TaskManager:
         episode_start = int(payload.get("episode_start", 1))
         max_characters = int(payload.get("max_characters", 5))
         max_scenes = int(payload.get("max_scenes", 10))
+        single_only = payload.get("single_only", False)
         
         style = project.style
         llm_profile = db.query(models.LLMProfile).filter(models.LLMProfile.is_default == True).first()
@@ -480,7 +481,8 @@ class TaskManager:
             llm_profile=llm_profile,
             episode_start=episode_start,
             max_characters=max_characters,
-            max_scenes=max_scenes
+            max_scenes=max_scenes,
+            single_only=single_only
         )
         
         task.progress = 50

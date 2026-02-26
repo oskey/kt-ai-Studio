@@ -47,6 +47,7 @@ class StoryGenRequest(BaseModel):
     episode_start: int = 1
     max_characters: int = 5
     max_scenes: int = 10
+    single_only: bool = False
 
 @router.post("/projects/{project_id}/auto_generate_story")
 async def auto_generate_story(
@@ -67,7 +68,8 @@ async def auto_generate_story(
             "mode": req.mode,
             "episode_start": req.episode_start,
             "max_characters": req.max_characters,
-            "max_scenes": req.max_scenes
+            "max_scenes": req.max_scenes,
+            "single_only": req.single_only
         })
     )
     db.add(task)

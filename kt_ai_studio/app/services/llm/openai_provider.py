@@ -395,6 +395,16 @@ def generate_player_prompts(name: str, sex: str, mark: str, style_preset=None, l
     【任务目标】
     你需要生成一张用于后续场景合成的【人物素材基图】。
     这张图必须是“干净的、去背景的、高质量的人物立绘”。
+    【比例与背景判定规则（CRITICAL · 判错级别）】
+    - 人物必须为明显长腿比例，头身比例 ≥ 8.5 头身。
+    - 必须明确写出：上身较短（short torso）+ 下身明显更长（long legs）。
+    - 若描述中出现或隐含“五五身 / 上下身等长 / 腿短”，视为错误输出。
+    - 若未明确写出身高（Height: XXX cm），视为错误输出。
+
+    【纯白背景硬性规则（CRITICAL）】
+    - 背景必须为：Pure White Background。
+    - 禁止出现：地面、阴影、投影、渐变、纹理、空间感、环境光。
+    - 若出现任何背景元素，视为错误输出。
 
     你的任务：
     1) 仅在该画风下扩写人物细节（外观、服装、发型等）。
@@ -438,11 +448,19 @@ def generate_player_prompts(name: str, sex: str, mark: str, style_preset=None, l
     - 全身像
     - **纯白背景 (Pure White Background)**，无任何杂物
     - 基础服装（用于后续换装）
+    - **身材比例 (CRITICAL)**：
+      - 必须在 Prompt 中包含明确的身材比例描述。
+      - 例如：8头身(8 heads tall), 长腿(long legs), 上身较短(short torso)。
+      - 比例描述必须具备“强对比”：
+      - 明确指出：下身长度明显长于上身（not equal）。
+      - 禁止模糊描述（如“比例协调”“正常身材”）。
+      - 如果是怪物或非人生物，描述其特殊的肢体比例（如：巨大的上肢，短小的下肢）。
+      - 必须包含身高描述 (Height: X cm)。
     
     请输出 JSON：
     {{
-      "prompt_pos": "严格按照 System Prompt 中的【标签格式】输出，包含：人物外观、体型与姿态、服装、画面与质感。必须包含：全身图、纯白背景(pure white background), simple background",
-      "prompt_neg": "避免画风漂移、比例错误、低质量、半身、裁切、复杂背景、环境背景",
+      "prompt_pos": "严格按照 System Prompt 中的【标签格式】输出，包含：人物外观、体型与姿态、服装、画面与质感。必须包含：全身图、纯白背景、身材比例描述、身高描述",
+      "prompt_neg": "避免画风漂移、比例错误、低质量、半身、裁切、复杂背景、环境背景、五五身(equal torso and legs)",
       "player_desc": "只包含人物客观外观特征，不含名字、不含用途说明"
     }}
     """
@@ -1162,6 +1180,7 @@ Your task is to plan the perfect composition for a single character based on the
        - **示例**："将 image2 图中唯一的男性人物合并到 image1 的中间中景。全身像(full body)，人物比例较小(small scale)。"
    - **推荐格式**："将 image2 图中唯一的[性别]人物合并到 image1 的[位置]。[比例描述]，人物[动作描述]，[神态描述]，[与环境的交互]。[光影融合描述]。"
    - **禁止**：禁止写“image1”或“image2”以外的图片代号。
+   
 
 2. **merge_neg (核心)**：
    - 保持原有的严格约束（禁止换脸、禁止重绘背景等）。
@@ -1352,7 +1371,16 @@ Your task is to plan the perfect composition for a single character based on the
             }
         return {"steps": []}
 
-def generate_story_assets(story_content: str, style_preset=None, llm_profile=None, episode_start=1, max_characters=5, max_scenes=10) -> dict:
+def generate_story_assets(
+    story_content: str,
+    style_preset=None,
+    llm_profile=None,
+    episode_start=1,
+    max_characters=5,
+    max_scenes=10,
+    single_only=False
+) -> dict:
+
     if not llm_profile:
         raise ValueError("No LLM Profile provided. Please configure LLM in Settings.")
 
@@ -1360,255 +1388,245 @@ def generate_story_assets(story_content: str, style_preset=None, llm_profile=Non
         api_key=llm_profile.api_key,
         base_url=llm_profile.base_url
     )
-    
-    model_name = llm_profile.model or "gpt-3.5-turbo"
-    
-    style_name = style_preset.name if style_preset else "默认通用风格"
-    style_guard = style_preset.llm_style_guard if style_preset else "无特殊风格约束，保持写实。"
-    style_pos = style_preset.style_pos if style_preset else ""
-    style_neg = style_preset.style_neg if style_preset else ""
-    # Add engine hint for model-specific prompting
-    engine_hint = f"{style_preset.engine_hint}" if style_preset and style_preset.engine_hint else "本项目使用 Qwen Image / Wan2.2 图像模型"
-    
-    system_prompt = f"""你是一个影视项目结构拆分器。
-    
-当前项目已锁定画风，这是最高优先级。
 
-画风名称：
-{style_name}
+    model_name = llm_profile.model or "gpt-4.1-mini"
 
-画风守卫：
-{style_guard}
+    # =========================
+    # System Prompt
+    # =========================
+    system_prompt = f"""
+【ROLE】
+你是一个影视项目结构拆分器，为自动漫剧 / 视频生成系统服务。
 
-【下游生成模型，你输出的提示词必须可直接用于这个 Comfyui 模型】
-{engine_hint}
+【ABSOLUTE RULES（最高优先级）】
+1. 只允许输出【一个合法 JSON 对象】
+2. 禁止输出 JSON 以外的任何文字
+3. 禁止生成：prompt_pos / prompt_neg / player_desc / scene_desc / 标签结构
+4. scenes[].episode 必须【严格等于 {episode_start}】
+5. 所有角色引用必须【完整一致，禁止简称、别名、省略】
 
-你的任务：
+【STYLE LOCK】
 
-根据用户提供的剧情梗概：
 
-1）提取主要人物（最多 {max_characters} 个）
-2）为每个人物生成：
-    - 姓名
-    - 性别
-    - 详细的“外貌/属性备注”（用于后续生成提示词）
+【CHARACTER TASK】
+从剧情中提取主要人物（最多 {max_characters} 个），每个角色必须包含：
+- player_name（严格命名规范）
+- player_sex（male / female / other）
+- height_cm（整数，单位 cm，必须合理）
+- player_mark（详细外貌 + **身材比例 (CRITICAL)** + 穿着）
 
-3）拆分剧情为场景（最多 {max_scenes} 个）
-4）为每个场景生成：
-    - 场景名称
-    - episode（必须从 {episode_start} 开始递增，本任务只生成第 {episode_start} 幕的内容）
-    - shot（从 1 开始递增）
-    - scene_type（场景类型：Indoor / Outdoor / Special）
-    - 基础场景描述（用于后续提示词生成）
-    - 出场角色列表（必须是提取出的人物姓名）
-    - 角色对白（dialogues）：该场景中发生的对话内容，用于后续生成视频口型。必须是数组，包含 {{"role": "角色名", "content": "对白内容"}}。如果场景无对白，则为空数组。
+【HEIGHT & PROPORTION RULE（CRITICAL）】
+- height_cm 必须是【纯整数】（单位 cm），若原文未提及，需合理推断。
+- player_mark 必须包含：
+  1. **明确的身高描述**（e.g., "身高约175cm", "身形高大", "娇小玲珑"）。
+  2. **身材比例描述**（e.g., "修长双腿", "八头身比例", "宽肩窄腰", "上身较短下身修长"）。
+  3. **禁止**出现五五身、上下身等长等不协调描述。
+  4. 必须能被文生图模型理解，用于生成正确的全身立绘。
 
-必须：
+【SCENE / SHOT TASK】
+将剧情拆解为【可直接生成的镜头 Shot】（最多 {max_scenes} 个）：
+- scenes 数组中的【每一项 = 一个独立 Shot】
+- 每个 Shot 必须可直接用于图像 / 视频生成
 
-- 不要生成 prompt_pos
-- 不要生成 prompt_neg
-- 不要生成 player_desc
-- 不要生成 scene_desc
-- 不要生成标签结构
-- 不要生成 JSON 以外内容
-- 不要输出解释
-- 所有输出必须为合法 JSON
-- 你必须为每个场景给出 characters 字段（数组），列出该场景出镜的主要角色姓名。该数组中的姓名必须来自你输出的 characters 列表。
-- **角色引用一致性 (CRITICAL)**：
-    - `scenes[].characters` 数组中的名字，必须**严格等于** `characters[].player_name` 中定义的完整名字。
-    - `scenes[].dialogues[].role` 中的名字，必须**严格等于** `characters[].player_name` 中定义的完整名字。
-    - **禁止简化**：例如，如果 `characters` 中定义的是 "陈平安（少年）"，那么在场景引用和对白角色中，**必须**写 "陈平安（少年）"，**严禁**只写 "陈平安"。
-    - **禁止别名**：严禁使用 "少年"、"黑衣人" 等未在 `characters` 列表中显式定义的别名。所有出场人物必须先在 `characters` 列表中声明。
-- scenes[].episode 必须等于 {episode_start}（单幕生成）
-- scene_type 判定规则：
-    - Indoor：明确室内/封闭空间（房间、车厢、走廊、实验室、控制室、地铁、商场、仓库等）
-    - Outdoor：明确室外/开放空间（街道、广场、荒野、山林、天台、停车场、码头等）
-    - Special：特殊空间/超自然/非典型（梦境、主神空间、传送通道、异次元、全息投影空间、纯UI空间、抽象背景、强概念装置空间等）
-    - 若混合但主要发生在室内则Indoor，主要在室外则Outdoor，无法归类或明显超现实则Special。必须严格区分大小写。
-- **分镜优化规则 (Crucial)**：
-    - **单镜头人数限制**：默认情况下，**每个场景/镜头（Shot）最多只安排 2 名角色**。
-    - **多人对话拆分**：如果剧情涉及 3 人或以上对话（例如 A, B, C），请将其**拆分为连续的多个镜头**。
-        - 镜头1：A 与 B 对话。
-        - 镜头2：A 与 C 对话，或 B 与 C 对话。
-        - 确保每个镜头内的对话逻辑闭环，场景背景保持一致，仅替换人物。
-    - **战斗/特殊场景豁免**：如果是战斗、围攻、对峙等必须多人同框的特殊剧情，可以突破 2 人限制，但需在 `base_desc` 中注明“多人同框”。
-    - **单人镜头最大化**：在篇幅允许的情况下，**尽可能多地生成单人镜头**。单人镜头更容易实现高质量的面部特写和表演。
-    - **单人视点与构图暗示**：对于单人镜头，请在 `base_desc` 中明确暗示以下视点之一：
-        - **特写 (Close-up)**：描写面部表情、眼神。
-          - *重要约束*：如果是特写镜头，**严禁在该场景中绑定 2 名及以上角色**。特写只能聚焦于 1 人。如果原剧情是多人对话，必须拆分为单人特写反应镜头。
-          - *场景描述配合*：必须强调“背景虚化”、“景深”、“面部特写背景”，严禁使用大广角远景描述。
-        - **正视全景 (Wide)**：表现人物站姿气场。
-        - **俯视 (Aerial)**：表现人物渺小或局势。
-        - **仰视 (Low Angle)**：表现人物高大或压迫感。
-    - **比例控制**：当场景人数 <= 2 时，**不要**刻意要求缩小人物比例（除非是超远景）。保持人物主体清晰可见。
+【SHOT OUTPUT REQUIRED FIELDS】
+- name
+- episode（固定为 {episode_start}）
+- shot（从 1 递增）
+- scene_type（Indoor / Outdoor / Special）
+- base_desc（完整、自包含的环境 + 氛围描述）
+- characters（本 Shot 出镜角色）
+- dialogues（对白数组，用于口型生成）
+
+【DIALOGUE RULE（CRITICAL）】
+- dialogues 是【核心字段】，不得随意省略
+- 只要剧情中存在语言交流，就必须生成对白
+- 每条对白结构：
+  {{ "role": "完整角色名", "content": "该角色实际说的话" }}
+- 无对白的 Shot，必须返回空数组 []
+
+【CHARACTER CONSISTENCY（CRITICAL）】
+- scenes[].characters 中的名字
+- dialogues[].role 中的名字
+必须【严格等于】characters[].player_name
+
+禁止任何未声明角色出现。
+
 """
-    
+
+    # =========================
+    # Shot Constraint
+    # =========================
+    if single_only:
+        system_prompt += """
+【SHOT MODE：SINGLE ONLY】
+- 每个 Shot 的 characters 数组【必须且只能包含 1 人】
+- 多人对话必须拆为 Shot-Reverse-Shot
+- 每个 Shot 只允许该角色说话
+"""
+    else:
+        system_prompt += """
+【SHOT MODE：NORMAL】
+- 每个 Shot 最多 2 人
+- 超过 2 人必须拆分
+- 战斗/围观等场景可多人同框，但需在 base_desc 中明确说明
+"""
+
+    system_prompt += """
+【CAMERA HINT】
+- 单人 Shot 请明确暗示构图：
+  - Close-up（面部特写，背景虚化）
+  - Wide（正视全景）
+  - Low Angle（仰视）
+  - Aerial（俯视）
+
+【BASE_DESC RULE】
+- 必须是完整、自包含描述
+- 严禁“同上 / 延续 / 和之前一样”等指代性语言
+
+【ABSOLUTE SPACE RULE（CRITICAL）】
+- base_desc 必须使用【绝对空间描述】，不得依赖其他 Shot 的场景存在
+- 禁止使用任何“相对位置 / 相对参照”表达，包括但不限于：
+  - “旁 / 边 / 附近 / 不远处 / 远处可见”
+  - “路旁 / 林边 / 官道旁 / 房屋外侧”
+  - “在某某附近 / 靠近某物”
+- 每个 base_desc 必须【独立定义一个完整可生成的空间】
+- 正确方式示例：
+  ❌ 官道旁的密林边缘
+  ✅ 深秋山林中，一条被落叶覆盖的狭窄土路贯穿其间，高大树木在两侧形成压迫性的林墙
+"""
+
+
+    # =========================
+    # User Prompt
+    # =========================
     user_prompt = f"""
-剧情梗概：
-{story_content}
-
-请输出 JSON，结构如下：
-
-{{
-  "characters": [
+    剧情梗概：
+    {story_content}
+    
+    请输出 JSON，结构如下：
+    
     {{
-      "player_name": "",
-      "player_sex": "male/female/other",
-      "player_mark": ""
-    }}
-  ],
-  "scenes": [
-    {{
-      "name": "",
-      "episode": {episode_start},
-      "shot": 1,
-      "scene_type": "Indoor/Outdoor/Special",
-      "base_desc": "",
-      "characters": ["角色A", "角色B"],
-      "dialogues": [
+      "characters": [
         {{
-            "role": "角色A",
-            "content": "这里写该角色说的话..."
+          "player_name": "",
+          "player_sex": "male/female/other",
+          "player_mark": ""
+        }}
+      ],
+      "scenes": [
+        {{
+          "name": "",
+          "episode": {episode_start},
+          "shot": 1,
+          "scene_type": "Indoor/Outdoor/Special",
+          "base_desc": "",
+          "characters": ["角色A", "角色B"],
+          "dialogues": [
+            {{
+                "role": "角色A",
+                "content": "这里写该角色说的话..."
+            }}
+          ]
         }}
       ]
     }}
-  ]
-}}
+    
+    说明：
+    1）player_mark 必须是：详细的外貌 + 属性备注，不包含提示词标签，不包含 prompt，不包含合成说明，不包含结构标签
+    2）关于角色命名规范（严格执行）：
+       格式必须为：姓名（年龄阶段） 或 姓名（年龄阶段）（特定状态）
+       - 姓名：角色本名，不带修饰。
+       - 年龄阶段（必选）：只能从以下词汇中选择一个：[幼年, 少年, 青年, 中年, 老年]。
+       - 特定状态（可选）：仅当角色身份或服装有重大特殊性时添加，如：(戎装)、(红衣)、(乞丐装)、(掌柜)。
+       
+       错误示例：
+       - 陶掌柜（中年·杂货铺主） -> 错误，使用了"·"且描述过长
+       - 李逍遥（少年剑客） -> 错误，"少年剑客"未拆分
+       
+       正确示例：
+       - 陈平安（少年）
+       - 陶掌柜（中年）（杂货铺主）
+       - 李逍遥（青年）
+       - 林月如（青年）（戎装）
+       
+       相应的 `player_mark` 必须准确描述该时期的特定年龄、外貌和着装。
+    3）base_desc 必须是：场景基础描述，世界观 + 氛围 + 关键元素，不包含提示词结构，不包含负面提示词
+       - **CRITICAL**: 如果单人模式下存在连续镜头（如同一地点多人对话），必须为每个镜头**重新书写完整、独立的环境描述**。
+       - **CRITICAL**: 严禁使用“同一间”、“同上”、“环境同前”、“和之前一样”等指代性词汇。每个描述都必须是**自包含 (Self-contained)** 的。
+       - 错误示例：“同一间书院静室，光线更落在少年脸上”
+       - 正确示例：“古风书院静室内，柔和光线透过木窗，书案上墨香四溢，光线聚焦在少年脸上”
+    4）scenes[].characters 必须是 characters[].player_name 的子集，如场景无人则为空数组 []
+    5）scene_type 必须是 "Indoor", "Outdoor" 或 "Special"
+    6）dialogues 用于口型生成，请根据剧情合理分配对白。
+    """
 
-说明：
-1）player_mark 必须是：详细的外貌 + 属性备注，不包含提示词标签，不包含 prompt，不包含合成说明，不包含结构标签
-2）关于角色命名规范（严格执行）：
-   格式必须为：姓名（年龄阶段） 或 姓名（年龄阶段）（特定状态）
-   - 姓名：角色本名，不带修饰。
-   - 年龄阶段（必选）：只能从以下词汇中选择一个：[幼年, 少年, 青年, 中年, 老年]。
-   - 特定状态（可选）：仅当角色身份或服装有重大特殊性时添加，如：(戎装)、(红衣)、(乞丐装)、(掌柜)。
-   
-   错误示例：
-   - 陶掌柜（中年·杂货铺主） -> 错误，使用了"·"且描述过长
-   - 李逍遥（少年剑客） -> 错误，"少年剑客"未拆分
-   
-   正确示例：
-   - 陈平安（少年）
-   - 陶掌柜（中年）（杂货铺主）
-   - 李逍遥（青年）
-   - 林月如（青年）（戎装）
-   
-   相应的 `player_mark` 必须准确描述该时期的特定年龄、外貌和着装。
-3）base_desc 必须是：场景基础描述，世界观 + 氛围 + 关键元素，不包含提示词结构，不包含负面提示词
-4）scenes[].characters 必须是 characters[].player_name 的子集，如场景无人则为空数组 []
-5）scene_type 必须是 "Indoor", "Outdoor" 或 "Special"
-6）dialogues 用于口型生成，请根据剧情合理分配对白。
-"""
-
-    # --- Debug Logging Start ---
+    # =========================
+    # Debug
+    # =========================
     if config.LLM_LOG:
-        print("\\n" + "="*50)
-        print(f" [LLM STORY Request] Provider: {llm_profile.provider} | Model: {model_name}")
-        print("-" * 20 + " System Prompt " + "-" * 20)
-        print(system_prompt.strip())
-        print("-" * 20 + " User Prompt " + "-" * 20)
-        print(user_prompt.strip())
-        print("="*50 + "\\n")
-    # --- Debug Logging End ---
+        print("=" * 60)
+        print("[LLM STORY REQUEST]")
+        print(system_prompt)
+        print(user_prompt)
+        print("=" * 60)
 
     try:
-        is_doubao = "volces.com" in llm_profile.base_url or "doubao" in model_name.lower()
-        
+        is_doubao = (
+            "volces.com" in llm_profile.base_url
+            or "doubao" in model_name.lower()
+        )
+
         params = {
             "model": model_name,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            "timeout": 120 # Increased timeout for scene generation
+            "timeout": 120
         }
-        
+
         if not is_doubao:
             params["response_format"] = {"type": "json_object"}
-            
-        response = client.chat.completions.create(**params)
-        
-        content = response.choices[0].message.content
-        
-        # --- Debug Logging Start ---
-        if config.LLM_LOG:
-            print("\\n" + "="*50)
-            print(" [LLM STORY Response]")
-            print("-" * 20 + " Raw Content " + "-" * 20)
-            print(content)
-            print("="*50 + "\\n")
-        # --- Debug Logging End ---
-        
-        usage = response.usage.model_dump() if response.usage else {}
-        
-        result = {}
-        # Robust JSON extraction
-        # Handle Doubao/LLM sometimes returning Chinese quotes or trailing commas or text after JSON
-        cleaned_content = content.strip()
-        
-        # 1. Try direct parse
-        try:
-            result = json.loads(cleaned_content)
-        except json.JSONDecodeError:
-            # 2. Try regex extract ```json ... ```
-            match = re.search(r'```json\s*(\{.*?\})\s*```', cleaned_content, re.DOTALL)
-            if match:
-                try:
-                    result = json.loads(match.group(1))
-                except json.JSONDecodeError:
-                    pass
-            
-            # 3. Try regex extract first { ... } block
-            if not result:
-                match = re.search(r'\{.*\}', cleaned_content, re.DOTALL)
-                if match:
-                    try:
-                        result = json.loads(match.group(0))
-                    except json.JSONDecodeError:
-                         # 4. Try fixing common JSON errors (like Chinese quotes)
-                         json_str = match.group(0)
-                         # Replace Chinese quotes
-                         json_str = json_str.replace('“', '"').replace('”', '"')
-                         # Remove trailing commas (simple regex approach)
-                         json_str = re.sub(r',\s*([\]}])', r'\1', json_str)
-                         try:
-                             result = json.loads(json_str)
-                         except:
-                             pass
-            
-            # 5. Retry logic if still failed
-            if not result:
-                    print(" [Warning] JSON Parse Failed. Attempting repair retry...")
-                    repair_prompt = "上一次输出不是合法的 JSON 格式。请修正格式，只输出纯 JSON，不要包含 Markdown 代码块或其他文字。"
-                    
-                    repair_params = {
-                        "model": model_name,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_prompt},
-                            {"role": "assistant", "content": content},
-                            {"role": "user", "content": repair_prompt}
-                        ]
-                    }
-                    if not is_doubao:
-                         repair_params["response_format"] = {"type": "json_object"}
-                         
-                    repair_resp = client.chat.completions.create(**repair_params)
-                    repair_content = repair_resp.choices[0].message.content
-                    print(f" [LLM Repair Response] {repair_content}")
-                    try:
-                        match = re.search(r'\{.*\}', repair_content, re.DOTALL)
-                        if match:
-                            result = json.loads(match.group(0))
-                        else:
-                            raise ValueError(f"无法解析 LLM 返回的 JSON (重试后): {repair_content}")
-                    except:
-                         raise ValueError(f"无法解析 LLM 返回的 JSON: {content}")
 
-        # Merge usage info
-        result["_usage"] = usage
-        
+        response = client.chat.completions.create(**params)
+        content = response.choices[0].message.content.strip()
+
+        if config.LLM_LOG:
+            print("[LLM RAW RESPONSE]")
+            print(content)
+
+        # =========================
+        # JSON Parse & Repair
+        # =========================
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError:
+            match = re.search(r'\{[\s\S]*\}', content)
+            if not match:
+                raise ValueError("No JSON object found")
+
+            json_str = match.group(0)
+            json_str = json_str.replace('“', '"').replace('”', '"')
+            json_str = re.sub(r',\s*([\]}])', r'\1', json_str)
+            result = json.loads(json_str)
+
+        # =========================
+        # Post Validation
+        # =========================
+        for c in result.get("characters", []):
+            if "height_cm" not in c or not isinstance(c["height_cm"], int):
+                raise ValueError(f"Invalid height_cm for character {c.get('player_name')}")
+
+        if single_only:
+            for s in result.get("scenes", []):
+                if len(s.get("characters", [])) != 1:
+                    raise ValueError(f"Single-only violation at shot {s.get('shot')}")
+                for d in s.get("dialogues", []):
+                    if d["role"] != s["characters"][0]:
+                        raise ValueError("Dialogue role mismatch in single_only mode")
+
+        result["_usage"] = response.usage.model_dump() if response.usage else {}
         return result
-            
+
     except Exception as e:
         raise Exception(f"OpenAI API Error ({llm_profile.provider}): {str(e)}")
