@@ -739,7 +739,7 @@ def generate_video_prompts(
     【画风反向（必须融入）】
     {style_neg}
 
-    【下游生成模型】
+    【下游生成模型，你输出的提示词必须可直接用于这个 Comfyui 模型】
     {engine_hint}
 
     【输入数据说明】
@@ -1166,7 +1166,7 @@ Your task is to plan the perfect composition for a single character based on the
 【画风反向（参考）】
 {style_neg}
 
-【下游生成模型】
+【下游生成模型，你输出的提示词必须可直接用于这个 Comfyui 模型】
 {engine_hint}
 
 【场景类型】
@@ -1248,34 +1248,28 @@ Your task is to plan the perfect composition for a single character based on the
 1. **全局空间规划 (Crucial)**：
    - 必须先分析场景的透视结构（前景、中景、远景）。
    - **防重叠 (Collision Avoidance)**：必须明确分配每个角色的站位。例如：A在左侧中景，B在右侧远景。
-   - **比例控制 (Scale Control)**：原始人物素材图片很大，合成时必须要求人物以【全身、中远景、较小比例】融入场景。避免“巨型人物”填满画面。
+   - **比例控制 (Scale Control)**：原始人物素材图片很大，合成时必须要求人物以【全身、中远景】融入场景。避免“巨型人物”填满画面。
    - **错位分布 (Staggered Layout)**：不要将所有人物安排在同一水平线上。利用纵深感，将人物安排在不同深度（前景/中景/远景），形成错落有致的构图。
    - 严禁让两个角色出现在同一个坐标点，或者发生身体穿插。
 
-2. **体型差与年龄感 (Age & Size Awareness) - NEW & CRITICAL**:
+2. **体型差与年龄感 (Age) - NEW & CRITICAL**:
    - **必须分析角色名字中的后缀属性**（如：幼年、少年、青年、成年等）。
    - **如果角色是“幼年/儿童”**：
-     - **强制缩小比例**：必须在 `merge_pos` 中显式加入 "very small scale", "child body proportions", "shorter than adult"。
-     - **相对高度**：如果与成人同框，必须明确“比旁边的成人矮小 (shorter than the adult next to him/her)”。
      - **站位调整**：儿童通常位于画面中下部或前景低处。
-   - **如果角色属性相同（如同为少年/青年）**：
-     - **保持比例一致**：不要刻意缩小某一方，除非是远景透视需要。
-     - **禁止不合理的体型差**：两人应具有相似的头身比和高度。
-   - **如果必须缩小**：仅当角色处于【远景/背景】位置时，才允许大幅缩小比例，并在 Prompt 中说明 "in the distance"。
 
 3. **merge_pos 必须极其简短与明确 (Simple & Precise)**：
    - **下游模型理解能力有限，禁止复杂的方位描述**。
    - **格式必须为**：“将 image2 图中唯一的[性别]人物增加到 image1 的[位置]，[比例描述]，[简短动作]”。
-   - **位置词只能是以下之一**（尽量少用前景，多用中景以缩小比例）：
+   - **位置词只能是以下之一**（尽量少用前景，多用中景）：
      - 左侧中景 / 右侧中景 / 中间中景 (推荐)
      - 远景左侧 / 远景右侧 / 远景中间 (推荐)
      - 左侧前景 / 右侧前景 / 中间前景 (仅当需要特写时使用)
-   - **比例描述词 (必须包含)**：full body (全身), small scale (小比例), wide shot (广角), in the distance (远处)。
+   - **比例描述词 (必须包含)**：full body (全身), wide shot (广角), in the distance (远处)。
    - **禁止**：禁止写“靠近XXX物体”、“在XXX之后”、“形成XXX构图”等复杂修饰语。
    - **允许**：可以包含简短的动作描述，如“站立”、“坐着”、“行走”、“挑水”、“扫地”等，但必须极其简练。
-   - **禁止**：禁止在 merge_pos 中描述朝向、光影、复杂的交互细节。这些统统不要写！只写位置、比例和核心动作！
+   - **禁止**：禁止在 merge_pos 中描述朝向、光影、复杂的交互细节。这些统统不要写！只写位置和核心动作！
    - **示例**：
-     - 正确："将 image2 图中唯一的男性人物增加到 image1 的左侧中景，全身像(full body)，小比例(small scale)，正在挑水"
+     - 正确："将 image2 图中唯一的男性人物增加到 image1 的左侧中景，全身像(full body)，正在挑水"
      - 正确："将 image2 图中唯一的女性人物增加到 image1 的右侧远景，全身(full body)，站立"
      - 错误："将 image2 合成在柜台后方靠近窗户的位置..." (太复杂)
 
@@ -1295,8 +1289,7 @@ Your task is to plan the perfect composition for a single character based on the
    - **示例**：
      - 如果人物站在左侧面向右侧，优先选 "right45" 或 "side"。
      - 如果人物背对镜头走向远方，优先选 "back"。
-     - 只有当人物正对镜头且无其他更好选择时，才使用 "front"。
-     - 只有当需要极小比例远景且无其他视角时，才使用 "wide"。
+     - 只有当人物正对镜头且无其他更好选择时，才使用 "wide"。
 
 输出结构 (JSON)：
 {{
@@ -1306,7 +1299,7 @@ Your task is to plan the perfect composition for a single character based on the
       "player_id": 123,
       "player_name": "角色名",
       "view_key": "right45",
-      "merge_pos": "将 image2 的[性别]人物增加到 image1 的[位置], [比例], [动作]",
+      "merge_pos": "将 image2 的[性别]人物增加到 image1 的[位置],[动作]",
       "merge_neg": "多行中文负面..."
     }}
   ]
