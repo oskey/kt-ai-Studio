@@ -210,7 +210,13 @@
                                     <div class="text-danger small mt-1 task-error">{{ task.error|truncate(30) }}</div>
                                     {% else %}
                                     <div class="text-muted small mt-1">
-                                        <span class="task-time">{{ task.created_at.strftime('%H:%M:%S') }}</span>
+                                        <span class="task-time">{{ task._started_at_display or task.created_at.strftime('%H:%M:%S') }}</span>
+                                        {% if task.duration %}
+                                        <span class="ms-1 text-success">用时: {{ task._duration_display or task.duration ~ 's' }}</span>
+                                        {% elif task.run_time %}
+                                        <span class="ms-1 text-primary run-time" data-start="{{ task.started_at }}">运行: {{ task.run_time }}</span>
+                                        {% endif %}
+                                        
                                         {% if task.status == 'running' %}
                                         <span class="ms-1 badge bg-primary-subtle text-primary rounded-pill task-progress">{{ task.progress }}%</span>
                                         {% endif %}

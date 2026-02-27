@@ -702,13 +702,21 @@ def generate_video_prompts(
     {d_text}
     
     任务要求：
-    1. 你必须理解对话的情绪与内容，在 prompt_pos 中描述对应人物正在说话的状态（如：张嘴说话、神情激动、低声耳语、大笑等）。
-    2. **角色对应 (Crucial)**：
+    1. 你必须理解对话的情绪与内容，在 prompt_pos 中描述对应人物正在说话的状态。
+    2. **强制开口暗示 (CRITICAL)**：
+       - 如果人物在说话，必须在 Prompt 中包含明确且强烈的“嘴部动态”描述。
+       - **必选词汇 (必须包含至少一个)**：speaking visibly, talking with mouth opening, lips moving clearly, shouting loudly (如果激动), whispering with lip movement (如果低语)。
+       - **时长控制**：根据对白长度（字数）来调整嘴部动作的持续感。
+         - 短句（<5字）："quick lip movement", "short phrase speaking"
+         - 长句（>10字）："continuous speaking", "sustained mouth movement", "long conversation"
+       - **示例**："The young man is speaking continuously, mouth opening and closing clearly", "lips moving naturally and visibly as she talks"。
+       - **严禁闭嘴**：绝对禁止 "mouth closed", "silent" 等描述出现在说话角色的 Prompt 中。
+    3. **角色对应 (Crucial)**：
        - 请根据 `characters` 列表中的 `name` 与对话中的 `role` 进行匹配。
        - 必须明确指出**哪个人物**在说话。例如："The young man (陈平安) is talking..." 或 "The shopkeeper (陶掌柜) is speaking..."。
        - 如果有多人对话，请描述他们的交互状态（如：面对面交谈、一人倾听一人诉说）。
-    3. **核心红线**：禁止生成任何形式的字幕、对话框、文字气泡。禁止在画面底部生成台词文本。
-    4. 仅描述“人物说话的动作与神态”即可（e.g., "talking, mouth open, expressive face, gesturing"）。
+    4. **核心红线**：禁止生成任何形式的字幕、对话框、文字气泡。禁止在画面底部生成台词文本。
+    5. 仅描述“人物说话的动作与神态”即可。
     """
     else:
         dialogues_constraint = """
@@ -758,11 +766,18 @@ def generate_video_prompts(
        - 返回的提示词必须使用中文。
 
     3. **生成视频参数 (fps, length)**：
-       - 根据动作复杂度推荐 FPS (通常 16 或 24)。
-       - 根据内容推荐时长 (Duration)，最长不超过 5 秒。
-       - 计算总帧数 (Length) = (FPS * Duration) + 1。
-       - 例如：3秒视频，FPS 16，Length = (16 * 3) + 1 = 49。
-       - 例如：5秒视频，FPS 24，Length = (24 * 5) + 1 = 121。
+       - **智能时长计算**：
+         - 默认推荐时长：5秒。
+         - **自动延时**：如果剧情动作复杂或对白较长（>15字），5秒无法完整展示，请适当增加时长。
+         - **时长上限**：绝对不超过 10秒（HARD LIMIT）。
+         - 优先尝试在 5秒内完成叙事；仅在必要时扩展至 6-10秒。
+       - **FPS 推荐**：
+         - 默认：16 FPS (适合大多数文戏)。
+         - 动作戏/快速镜头：24 FPS。
+       - **Length 计算公式**：(FPS * Duration) + 1。
+       - 示例：
+         - 5秒, 16FPS -> 81帧
+         - 8秒, 24FPS -> 193帧
        
     {dialogues_constraint}
 
@@ -786,7 +801,7 @@ def generate_video_prompts(
     1. 必须融入画风【{style_name}】的风格词。
     2. 绝对不要出现人名，用"年轻人/妇女"等通用词。
     3. 准确描述人物位置和动作。
-    5. 必须返回建议的 FPS 和 Length (计算公式: fps * 秒数 + 1)，最长不超过 5 秒。
+    5. 必须返回建议的 FPS 和 Length (计算公式: fps * 秒数 + 1)，推荐 5秒，最长不超过 10 秒。
     """
 
     if config.LLM_LOG:
@@ -1190,7 +1205,9 @@ Your task is to plan the perfect composition for a single character based on the
 3. **view_key 选择 (Strict Logic)**：
    - **特写场景优先**：如果【场景基础描述】中包含“特写”、“Close-up”、“面部”、“眼神”等关键词，且 `views_keys` 中有 `close`，**必须优先选择 `close`**。如果没有 `close`，选择 `front` 或 `low`。
    - **普通场景优先**：根据动作和站位选择 `right45`, `left45`, `front` 等。
-   - **远景/俯视优先**：如果场景是俯视，优先选 `aerial` 或 `wide`。
+   - **远景/俯视优先**：如果场景是俯视，优先选 或 `wide`。
+   - **尽量不选择**：`low`, `aerial`，因为在实际测试中效果不理想。
+
 
 输出结构 (JSON)：
 {{
@@ -1476,8 +1493,7 @@ def generate_story_assets(
 - 单人 Shot 请明确暗示构图：
   - Close-up（面部特写，背景虚化）
   - Wide（正视全景）
-  - Low Angle（仰视）
-  - Aerial（俯视）
+
 
 【BASE_DESC RULE】
 - 必须是完整、自包含描述
@@ -1551,10 +1567,13 @@ def generate_story_assets(
        
        相应的 `player_mark` 必须准确描述该时期的特定年龄、外貌和着装。
     3）base_desc 必须是：场景基础描述，世界观 + 氛围 + 关键元素，不包含提示词结构，不包含负面提示词
-       - **CRITICAL**: 如果单人模式下存在连续镜头（如同一地点多人对话），必须为每个镜头**重新书写完整、独立的环境描述**。
-       - **CRITICAL**: 严禁使用“同一间”、“同上”、“环境同前”、“和之前一样”等指代性词汇。每个描述都必须是**自包含 (Self-contained)** 的。
-       - 错误示例：“同一间书院静室，光线更落在少年脸上”
-       - 正确示例：“古风书院静室内，柔和光线透过木窗，书案上墨香四溢，光线聚焦在少年脸上”
+       - **CRITICAL**: 每个 base_desc 必须包含**明确的画面与镜头描述**。
+       - **CRITICAL**: 如果单人模式下存在连续镜头，必须为每个镜头**重新书写完整、独立的环境描述**。
+       - **CRITICAL**: 严禁使用“同一间”、“同上”、“环境同前”等指代性词汇。每个描述都必须是**自包含 (Self-contained)** 的。
+       - **CRITICAL**: 必须包含镜头语言（如：特写/全景），以及光影氛围描述。
+       - 错误示例：“同一间书院静室，光线更落在少年脸上”（缺少环境细节，使用了指代）
+       - 错误示例：“山林土路尽头形成一处狭窄洼地...”（缺少镜头视角描述）
+       - 正确示例：“古风书院静室内，柔和光线透过木窗，书案上墨香四溢。镜头为近景特写(Close-up)，聚焦在少年沉静的侧脸，背景书架虚化。”
     4）scenes[].characters 必须是 characters[].player_name 的子集，如场景无人则为空数组 []
     5）scene_type 必须是 "Indoor", "Outdoor" 或 "Special"
     6）dialogues 用于口型生成，请根据剧情合理分配对白。
