@@ -93,7 +93,8 @@
         <div class="container text-center">
             <p class="text-muted small mb-0">
                 &copy; 2026 <a href="https://www.x-kt.com" target="_blank" class="text-decoration-none text-muted">KT AI Studio</a>.
-                <span id="app-version" class="ms-2 badge bg-light text-secondary border">v1.0.0</span>
+                <span class="ms-2 badge bg-light text-secondary border">本地版本: <span id="local-version">v1.0.0</span></span>
+                <span id="remote-version-badge" class="ms-2 badge bg-success-subtle text-success border border-success-subtle" style="display:none;">最新版本: <span id="remote-version">...</span></span>
             </p>
         </div>
     </footer>
@@ -145,45 +146,44 @@
     <script>
         // Version Check Logic
         document.addEventListener('DOMContentLoaded', async () => {
-            // 1. Get Local Version
+            // 1. Get Local Version (Add timestamp to prevent cache)
             let localVersion = "1.0.0";
             try {
-                const res = await fetch('/api/system/version');
+                const res = await fetch(`/api/system/version?_t=${new Date().getTime()}`);
                 const data = await res.json();
                 if (data.version) {
-                    localVersion = data.version;
-                    document.getElementById('app-version').innerText = 'v' + localVersion;
+                    localVersion = data.version.trim();
+                    document.getElementById('local-version').innerText = 'v' + localVersion;
                     document.getElementById('current-version-display').innerText = 'v' + localVersion;
                 }
             } catch (e) { console.error("Failed to fetch local version", e); }
 
-            // 2. Check Remote Version (Only if not ignored in this session)
-            if (!sessionStorage.getItem('update_ignored')) {
-                checkRemoteVersion(localVersion);
-            }
+            // 2. Check Remote Version
+            // Always check on load, update UI if newer version found
+            checkRemoteVersion(localVersion);
         });
 
         async function checkRemoteVersion(localVer) {
-            const githubUrl = "https://raw.githubusercontent.com/oskey/kt-ai-Studio/main/version.txt";
-            // Use a proxy or direct fetch if CORS allows (GitHub Raw usually has CORS issues from localhost)
-            // Strategy: We can try fetching via backend proxy if needed, but let's try direct first.
-            // If direct fails due to CORS, we might need a simple backend proxy endpoint.
-            // For now, let's assume we implement a backend proxy for stability.
-            
-            // Actually, let's use a simple backend endpoint to fetch remote version to avoid CORS
-            // We will add this endpoint to system.py later.
-            // For now, let's assume we add /api/system/check_update
-            
             try {
-                const res = await fetch('/api/system/check_update');
+                // Add timestamp to prevent backend or proxy cache
+                const res = await fetch(`/api/system/check_update?_t=${new Date().getTime()}`);
                 const data = await res.json();
                 
                 if (data.remote_version) {
                     const remoteVer = data.remote_version.trim();
+                    console.log(`Local: ${localVer}, Remote: ${remoteVer}, Compare: ${compareVersions(remoteVer, localVer)}`);
+                    
                     if (compareVersions(remoteVer, localVer) > 0) {
-                        document.getElementById('remote-version-display').innerText = 'v' + remoteVer;
-                        const modal = new bootstrap.Modal(document.getElementById('versionUpdateModal'));
-                        modal.show();
+                        // Update Footer Badge
+                        document.getElementById('remote-version').innerText = 'v' + remoteVer;
+                        document.getElementById('remote-version-badge').style.display = 'inline-block';
+                        
+                        // Show Modal (Only if not ignored in this session)
+                        if (!sessionStorage.getItem('update_ignored')) {
+                            document.getElementById('remote-version-display').innerText = 'v' + remoteVer;
+                            const modal = new bootstrap.Modal(document.getElementById('versionUpdateModal'));
+                            modal.show();
+                        }
                     }
                 }
             } catch (e) {
@@ -192,8 +192,13 @@
         }
 
         function compareVersions(v1, v2) {
-            const p1 = v1.replace('v','').split('.').map(Number);
-            const p2 = v2.replace('v','').split('.').map(Number);
+            // Remove 'v' or 'V' and trim whitespace
+            const s1 = v1.replace(/^[vV]/, '').trim();
+            const s2 = v2.replace(/^[vV]/, '').trim();
+            
+            const p1 = s1.split('.').map(Number);
+            const p2 = s2.split('.').map(Number);
+            
             for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
                 const n1 = p1[i] || 0;
                 const n2 = p2[i] || 0;

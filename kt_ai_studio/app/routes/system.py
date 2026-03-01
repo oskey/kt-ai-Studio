@@ -78,12 +78,15 @@ async def get_system_version():
         return JSONResponse({"version": "Unknown", "error": str(e)})
 
 @router.get("/api/system/check_update")
-async def check_system_update():
+async def check_system_update(request: Request):
     """
     Check for updates from GitHub (Backend Proxy to avoid CORS)
+    Added random timestamp param support to bypass cache
     """
     import httpx
-    github_url = "https://raw.githubusercontent.com/oskey/kt-ai-Studio/main/version.txt"
+    # Add timestamp to github url as well just in case
+    import time
+    github_url = f"https://raw.githubusercontent.com/oskey/kt-ai-Studio/main/version.txt?t={int(time.time())}"
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(github_url, timeout=5.0)
