@@ -20,7 +20,7 @@
   <img src="https://img.shields.io/github/stars/oskey/kt-ai-Studio?style=flat-square" />
   <img src="https://img.shields.io/github/license/oskey/kt-ai-Studio?style=flat-square" />
   <img src="https://img.shields.io/badge/ComfyUI-API-blue?style=flat-square" />
-  <img src="https://img.shields.io/badge/LLM-Qwen%20%7C%20Wan2.2-purple?style=flat-square" />
+  <img src="https://img.shields.io/badge/LLM-Qwen%20%7C%20Wan2.2%20%7C%20LTX2%20%7C%20Z--Image-purple?style=flat-square" />
 </p>
 
 ---

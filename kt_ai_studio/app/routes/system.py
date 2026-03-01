@@ -65,11 +65,27 @@ async def get_system_version():
     Get current system version from version.txt
     """
     try:
-        # kt_ai_studio/app/routes/system.py -> kt_ai_studio/version.txt (need to adjust path)
-        # Root is kt_ai_studio (the inner one)
-        # We assume version.txt is in the project root (kt_ai_studio)
-        version_file = Path(__file__).parent.parent.parent / "version.txt"
-        if version_file.exists():
+        # File path resolution:
+        # __file__ = .../kt_ai_studio/app/routes/system.py
+        # parent.parent.parent = .../kt_ai_studio/
+        # version.txt should be at .../kt_ai_studio/version.txt OR .../version.txt (project root)
+        
+        # Check both potential locations
+        current_dir = Path(__file__).parent
+        
+        # Option 1: Project Root (where requirements.txt is) -> x:\Comfyui\KT-AI-Studio\version.txt
+        root_version_file = current_dir.parent.parent.parent / "version.txt"
+        
+        # Option 2: Inner Package Root -> x:\Comfyui\KT-AI-Studio\kt_ai_studio\version.txt
+        inner_version_file = current_dir.parent.parent / "version.txt"
+        
+        version_file = None
+        if root_version_file.exists():
+            version_file = root_version_file
+        elif inner_version_file.exists():
+            version_file = inner_version_file
+            
+        if version_file:
             version = version_file.read_text(encoding="utf-8").strip()
             return JSONResponse({"version": version})
         else:
@@ -77,23 +93,63 @@ async def get_system_version():
     except Exception as e:
         return JSONResponse({"version": "Unknown", "error": str(e)})
 
+# Global variable to track update check status (True means user has been notified or checked)
+# Reset on server restart
+UPDATE_CHECK_DONE = False
+CACHED_REMOTE_VERSION = None
+
 @router.get("/api/system/check_update")
-async def check_system_update(request: Request):
+async def check_system_update(request: Request, force: bool = False):
     """
     Check for updates from GitHub (Backend Proxy to avoid CORS)
     Added random timestamp param support to bypass cache
+    
+    Args:
+        force: If True, ignore UPDATE_CHECK_DONE flag and check anyway.
     """
+    global UPDATE_CHECK_DONE, CACHED_REMOTE_VERSION
+    
+    # If already checked and not forced, return cached status (empty or previously fetched?)
+    # Requirement: "Stop requesting GitHub". So we just return cached version if available.
+    if UPDATE_CHECK_DONE and not force:
+        if CACHED_REMOTE_VERSION:
+             return JSONResponse({"remote_version": CACHED_REMOTE_VERSION, "cached": True})
+        else:
+             return JSONResponse({"status": "skipped", "message": "Update check already performed in this session"})
+
     import httpx
     # Add timestamp to github url as well just in case
     import time
-    github_url = f"https://raw.githubusercontent.com/oskey/kt-ai-Studio/main/version.txt?t={int(time.time())}"
+    # Use Cache-Busting via random query param
+    github_url = f"https://raw.githubusercontent.com/oskey/kt-ai-Studio/main/version.txt?_t={int(time.time())}"
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.get(github_url, timeout=5.0)
+            # Force headers to avoid cache
+            headers = {"Cache-Control": "no-cache", "Pragma": "no-cache"}
+            resp = await client.get(github_url, headers=headers, timeout=5.0)
+            
+            # Mark as done regardless of result, to prevent spamming
+            UPDATE_CHECK_DONE = True
+            
             if resp.status_code == 200:
-                remote_version = resp.text
-                return JSONResponse({"remote_version": remote_version.strip()})
+                remote_version = resp.text.strip()
+                CACHED_REMOTE_VERSION = remote_version # Cache it!
+                return JSONResponse({"remote_version": remote_version})
             else:
                 return JSONResponse({"error": f"GitHub returned {resp.status_code}"}, status_code=500)
     except Exception as e:
+        # If failed, we might want to retry later? No, user said "stop requesting".
+        # But if failed, maybe we shouldn't mark done? 
+        # User requirement: "Once run, check once, then stop". So we mark done.
+        UPDATE_CHECK_DONE = True
         return JSONResponse({"error": str(e)}, status_code=500)
+
+@router.post("/api/system/ack_update")
+async def ack_update():
+    """
+    Frontend calls this when user clicks "Yes" or "No" or closes the modal.
+    Sets the global flag to prevent further checks.
+    """
+    global UPDATE_CHECK_DONE
+    UPDATE_CHECK_DONE = True
+    return JSONResponse({"status": "ok"})

@@ -169,20 +169,43 @@
                 const res = await fetch(`/api/system/check_update?_t=${new Date().getTime()}`);
                 const data = await res.json();
                 
+                // If skipped (already checked in this session), do nothing
+                if (data.status === 'skipped') {
+                    console.log("Version check skipped: already performed.");
+                    return;
+                }
+
                 if (data.remote_version) {
                     const remoteVer = data.remote_version.trim();
-                    console.log(`Local: ${localVer}, Remote: ${remoteVer}, Compare: ${compareVersions(remoteVer, localVer)}`);
                     
+                    // Always update footer badge if we have a version (from cache or live)
+                    document.getElementById('remote-version').innerText = 'v' + remoteVer;
+                    document.getElementById('remote-version-badge').style.display = 'inline-block';
+                    
+                    // Show Modal only if newer AND not ignored AND not cached (meaning this is the first live check)
+                    // If cached=True, it means user already saw this (or ignored it) in this session session, so don't pop up again?
+                    // User said: "no longer pop up UI prompt". So if data.cached is true, we should probably NOT show modal again.
+                    // But wait, user said "no matter yes or no, stop requesting github".
+                    // The backend handles "stop requesting".
+                    // The frontend needs to handle "stop popping up".
+                    // If we get cached version, it means we already checked. So don't popup.
+                    
+                    if (data.cached) {
+                         return; 
+                    }
+
                     if (compareVersions(remoteVer, localVer) > 0) {
-                        // Update Footer Badge
-                        document.getElementById('remote-version').innerText = 'v' + remoteVer;
-                        document.getElementById('remote-version-badge').style.display = 'inline-block';
-                        
                         // Show Modal (Only if not ignored in this session)
                         if (!sessionStorage.getItem('update_ignored')) {
                             document.getElementById('remote-version-display').innerText = 'v' + remoteVer;
                             const modal = new bootstrap.Modal(document.getElementById('versionUpdateModal'));
                             modal.show();
+                            
+                            // Mark as ignored immediately so refreshing page won't show it again?
+                            // No, user requirement: "python restart -> check once -> stop"
+                            // Backend already handles "check once", so refreshing won't trigger backend check again.
+                            // But frontend modal logic relies on backend returning a version.
+                            // If backend returns "skipped", modal won't show. Correct.
                         }
                     }
                 }
