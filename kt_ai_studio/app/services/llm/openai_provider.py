@@ -1744,11 +1744,30 @@ def generate_story_assets(
 
         if single_only:
             for s in result.get("scenes", []):
+                # Ignore empty characters for Special scenes (like black screen, system UI)
+                if s.get("scene_type") == "Special" and len(s.get("characters", [])) == 0:
+                    continue
+                    
                 if len(s.get("characters", [])) != 1:
-                    raise ValueError(f"Single-only violation at shot {s.get('shot')}")
-                for d in s.get("dialogues", []):
-                    if d["role"] != s["characters"][0]:
-                        raise ValueError("Dialogue role mismatch in single_only mode")
+                    # Allow empty characters in general? Maybe just for Special/Empty scenes.
+                    # But if single_only is enforced, usually we want exactly one character.
+                    # However, "Death screen" or "Scenery only" might have 0 characters.
+                    # Let's relax the rule: Must be <= 1 character.
+                    if len(s.get("characters", [])) == 0:
+                        continue
+                    raise ValueError(f"Single-only violation at shot {s.get('shot')}: found {len(s.get('characters', []))} characters")
+                
+                # Check dialogues only if characters exist
+                if s.get("characters"):
+                    for d in s.get("dialogues", []):
+                        if d["role"] != s["characters"][0]:
+                            # In single mode, if there is dialogue, it must belong to the single character present
+                            # Unless it's a voiceover? But prompt says "role" must be in "characters".
+                            # Let's keep it strict but maybe allow partial match?
+                            # For now, strict match is fine if LLM follows instructions.
+                            # But if LLM hallucinates a name not in scene characters, we might want to warn instead of fail?
+                            # Let's stick to fail to ensure quality, but maybe relax for voiceover if we supported it.
+                            raise ValueError(f"Dialogue role mismatch in single_only mode at shot {s.get('shot')}")
 
         result["_usage"] = response.usage.model_dump() if response.usage else {}
         return result
