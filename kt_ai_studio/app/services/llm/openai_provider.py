@@ -838,9 +838,10 @@ def generate_video_prompts(
          - 虽然通常负面词放在 prompt_neg，但为了对抗模型强烈的加字幕倾向，**正向 Prompt 中也要显式声明“不要字幕”**。
        
        - **环境与动作强化 (Scene & Action Enrichment - CRITICAL)**：
-         - **环境动态化**：不要只描述静态背景。根据场景类型（室内/室外），自动添加合理的环境动态。
+         - **环境动态化**：不要只描述静态背景。根据场景类型（室内/室外/特殊），自动添加合理的环境动态。
            - 示例（室外）："wind blowing through hair/clothes", "leaves falling", "dust floating in light rays", "clouds moving slowly".
            - 示例（室内）："candle light flickering", "curtains swaying gently", "dust motes dancing in the light".
+           - **特殊情况（系统空间/纯色背景）**：如果是 Pure Black/White Background，**不要添加自然环境动态**（无风、无落叶）。专注于人物的微动作或简单的光影流动（"subtle lighting shift", "rim light moving"）。
          - **人物微动作**：除了主要动作（如说话、行走），添加自然的微小肢体语言，避免人物僵硬。
            - 示例："blinking naturally", "slight head tilt", "hand gestures while speaking", "shifting weight", "breathing movement".
          - **光影互动**：描述人物与环境光影的交互。
@@ -994,6 +995,13 @@ def generate_scene_prompts(base_desc: str, style_preset=None, llm_profile=None, 
     【场景类型约束】
     {type_constraint}
     {player_constraint}
+
+    【特殊场景规则：系统/虚拟界面 (CRITICAL)】
+    - **触发条件**：如果输入描述中包含“系统界面”、“虚拟面板”、“属性面板”、“系统提示”、“虚拟屏幕”、“金手指”、“系统空间”等概念，或者角色身份为“系统”。
+    - **强制执行**：
+      - **背景必须为**：**"Simple Black Background" (纯黑背景)** 或 **"Solid Color Background" (纯色背景)**。
+      - **绝对禁止**：禁止生成复杂的科技元素（如：数据流、扫描线、网格、全息投影、复杂的UI组件、文字、发光特效）。
+      - **原因**：系统界面将由后期合成，场景底图必须是干净的纯色，方便抠图与合成。
     
     你的任务是： 
     在保持原有画面风格、镜头语言、氛围与美术一致性的前提下，
@@ -1604,6 +1612,12 @@ def generate_story_assets(
 【BASE_DESC RULE】
 - 必须是完整、自包含描述
 - 严禁“同上 / 延续 / 和之前一样”等指代性语言
+
+【SYSTEM / VIRTUAL UI RULE (CRITICAL)】
+- 如果剧情涉及“系统界面”、“查看属性”、“系统提示”、“虚拟面板”等虚拟UI交互，或者场景是“系统空间”：
+- base_desc 必须描述为：“纯黑背景，无其他细节。”（Pure Black Background）
+- 禁止描述具体的UI细节（如文字内容、边框样式、数据流、扫描线），因为这些无法被生图模型准确生成，且会干扰后期合成。
+- 确保场景为纯净的底色，方便后期贴图。
 
 【ABSOLUTE SPACE RULE（CRITICAL）】
 - base_desc 必须使用【绝对空间描述】，不得依赖其他 Shot 的场景存在
