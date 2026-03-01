@@ -8,10 +8,13 @@ from app.services.tasks.manager import task_manager
 from app.utils import to_web_path
 import json
 import os
+from datetime import timedelta
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 templates.env.globals["to_web_path"] = to_web_path
+templates.env.globals["timedelta"] = timedelta
+
 
 @router.get("/manage", response_class=HTMLResponse)
 async def video_manage_page(request: Request, scene_id: int, db: Session = Depends(get_db)):

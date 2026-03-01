@@ -82,15 +82,15 @@ async def check_system_update():
     """
     Check for updates from GitHub (Backend Proxy to avoid CORS)
     """
-    import aiohttp
+    import httpx
     github_url = "https://raw.githubusercontent.com/oskey/kt-ai-Studio/main/version.txt"
     try:
-        async with aiohttp.ClientSession() as client:
-            async with client.get(github_url, timeout=5) as resp:
-                if resp.status == 200:
-                    remote_version = await resp.text()
-                    return JSONResponse({"remote_version": remote_version.strip()})
-                else:
-                    return JSONResponse({"error": f"GitHub returned {resp.status}"}, status_code=500)
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(github_url, timeout=5.0)
+            if resp.status_code == 200:
+                remote_version = resp.text
+                return JSONResponse({"remote_version": remote_version.strip()})
+            else:
+                return JSONResponse({"error": f"GitHub returned {resp.status_code}"}, status_code=500)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

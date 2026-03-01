@@ -210,7 +210,7 @@
                                     <div class="text-danger small mt-1 task-error">{{ task.error|truncate(30) }}</div>
                                     {% else %}
                                     <div class="text-muted small mt-1">
-                                        <span class="task-time">{{ task._started_at_display or task.created_at.strftime('%H:%M:%S') }}</span>
+                                        <span class="task-time">{{ (task.created_at + timedelta(hours=8)).strftime('%H:%M:%S') }}</span>
                                         {% if task.duration %}
                                         <span class="ms-1 text-success">用时: {{ task._duration_display or task.duration ~ 's' }}</span>
                                         {% elif task.run_time %}
@@ -485,10 +485,13 @@
             const data = await res.json();
             
             if (data.status === 'success') {
-                const taskId = data.task_id;
-                setTimeout(() => updatePageContent(), 1000);
-                monitorTaskInModal(taskId, false); // false = isVideoGeneration
-            } else {
+                    const taskId = data.task_id;
+                    // Wait a bit before polling to let task start
+                    setTimeout(() => {
+                        updatePageContent();
+                        monitorTaskInModal(taskId, false); // false = isVideoGeneration
+                    }, 500);
+                } else {
                 throw new Error(data.error || "启动失败");
             }
         } catch (e) {
@@ -716,51 +719,74 @@
         try {
             // Correctly handle URL parameters
             const url = new URL(window.location.href);
-            url.searchParams.set('t', new Date().getTime());
+            // Don't add timestamp if not needed, but here we want fresh data
+            // Fetch the current page content
+            const response = await fetch(url.toString(), {
+                cache: "no-store",
+                headers: { "X-Requested-With": "XMLHttpRequest" }
+            });
             
-            const response = await fetch(url.toString());
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             
             const html = await response.text();
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
 
-            const newTaskHistory = doc.querySelector('.card .list-group');
-            const currentTaskHistory = document.querySelector('.card .list-group');
-            if (newTaskHistory && currentTaskHistory) currentTaskHistory.innerHTML = newTaskHistory.innerHTML;
+            // --- Update Task History List ---
+            const newTaskHistory = doc.querySelector('#taskList'); // Use ID for accuracy
+            const currentTaskHistory = document.getElementById('taskList');
+            if (newTaskHistory && currentTaskHistory) {
+                currentTaskHistory.innerHTML = newTaskHistory.innerHTML;
+            }
             
+            // --- Update Status Badge ---
             const newStatus = doc.querySelector('.d-flex.align-items-center.gap-2');
             const currentStatus = document.querySelector('.d-flex.align-items-center.gap-2');
-            if (newStatus && currentStatus) currentStatus.innerHTML = newStatus.innerHTML;
+            if (newStatus && currentStatus) {
+                currentStatus.innerHTML = newStatus.innerHTML;
+            }
             
-            // Also update context if generated (e.g. after prompt gen)
+            // --- Update LLM Context (Readonly) ---
             const newContext = doc.querySelector('textarea[readonly]');
             const currentContext = document.querySelector('textarea[readonly]');
-            if (newContext && currentContext) currentContext.value = newContext.value;
+            if (newContext && currentContext) {
+                 currentContext.value = newContext.value;
+            }
             
-            // Also update prompts if generated
+            // --- Update Prompts (Only if not focused) ---
             const newPromptPos = doc.querySelector('textarea[name="prompt_pos"]');
             const currentPromptPos = document.querySelector('textarea[name="prompt_pos"]');
-            if (newPromptPos && currentPromptPos && !document.activeElement.isEqualNode(currentPromptPos)) {
+            if (newPromptPos && currentPromptPos && document.activeElement !== currentPromptPos) {
                  currentPromptPos.value = newPromptPos.value;
             }
             const newPromptNeg = doc.querySelector('textarea[name="prompt_neg"]');
             const currentPromptNeg = document.querySelector('textarea[name="prompt_neg"]');
-            if (newPromptNeg && currentPromptNeg && !document.activeElement.isEqualNode(currentPromptNeg)) {
+            if (newPromptNeg && currentPromptNeg && document.activeElement !== currentPromptNeg) {
                  currentPromptNeg.value = newPromptNeg.value;
             }
 
+            // --- Update Running Task IDs ---
             const newRunningData = doc.getElementById('running-tasks-data');
             const currentRunningData = document.getElementById('running-tasks-data');
             if (newRunningData && currentRunningData) {
-                currentRunningData.setAttribute('data-task-ids', newRunningData.getAttribute('data-task-ids'));
-                checkTaskStatus(); 
+                const newIds = newRunningData.getAttribute('data-task-ids');
+                currentRunningData.setAttribute('data-task-ids', newIds);
+                // Trigger check status immediately if we have new running tasks
+                if (newIds && newIds.trim().length > 0) {
+                     checkTaskStatus();
+                }
             }
             
-            // Update Video Result Area if done
-            const newVideoArea = doc.querySelector('.col-lg-7 .card:nth-child(2) .card-body');
-            const currentVideoArea = document.querySelector('.col-lg-7 .card:nth-child(2) .card-body');
-            if (newVideoArea && currentVideoArea) currentVideoArea.innerHTML = newVideoArea.innerHTML;
+            // --- Update Video Result Area ---
+            // Select by ID or a more specific selector if possible, falling back to structure
+            const newVideoCard = doc.querySelector('.col-lg-7 .card:nth-of-type(2) .card-body'); 
+            const currentVideoCard = document.querySelector('.col-lg-7 .card:nth-of-type(2) .card-body');
+            if (newVideoCard && currentVideoCard) {
+                // Check if content actually changed to avoid flickering video
+                if (newVideoCard.innerHTML !== currentVideoCard.innerHTML) {
+                     currentVideoCard.innerHTML = newVideoCard.innerHTML;
+                }
+            }
 
         } catch (err) {
             console.error("Failed to update page content:", err);
