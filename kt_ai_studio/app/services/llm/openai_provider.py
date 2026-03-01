@@ -358,7 +358,7 @@ def normalize_scene_negative_prompt(raw_neg: str, style_neg: str) -> str:
             
     return "，".join(final_parts).strip("，")
 
-def generate_player_prompts(name: str, sex: str, mark: str, style_preset=None, llm_profile=None) -> dict:
+def generate_player_prompts(name: str, sex: str, mark: str, style_preset=None, llm_profile=None, optimize_ancient=False) -> dict:
     if not llm_profile:
         raise ValueError("No LLM Profile provided. Please configure LLM in Settings.")
 
@@ -377,6 +377,25 @@ def generate_player_prompts(name: str, sex: str, mark: str, style_preset=None, l
     # Add engine hint for model-specific prompting
     engine_hint = f"{style_preset.engine_hint}" if style_preset and style_preset.engine_hint else "本项目使用 Qwen Image / Wan2.2 图像模型"
     
+    optimize_prompt = ""
+    if optimize_ancient and str(sex).lower() in ["female", "女", "女性"]:
+         optimize_prompt = """
+    【古装类服装优化规则 (CRITICAL)】
+    - 针对女性角色：
+      - **必须强调曲线美**：使用 "hourglass figure", "curvy body", "slim waist", "wide hips" 等词汇。
+      - **服装设计 (重要)**：
+        - 如果是女性角色：
+          - **上身设计**：**必须包含内搭描述**，如抹胸(tube top)、肚兜(dudou)、束胸(corset)等。**必须显露乳沟** (cleavage, deep v-neck)，展现丰满身材。
+          - **下身设计 (美腿优化)**：
+            - **极高开叉/侧边镂空**：如果是旗袍或长裙，必须强调 **“单侧极高开叉直至腰部 (single ultra-high slit up to the waist)”** 或 **“单侧完全镂空 (one-side cutout)”**。**严禁双侧开叉**。
+            - **视觉效果**：明确描述 **“从开叉侧可以看到完整的臀部曲线 (full side hip visible through the slit)”**，**“大腿根部若隐若现 (upper thigh exposed)”**，**“可以看到少量内裤边缘 (panties slightly visible through the slit)”**。
+            - **无内搭/隐形内搭**：**下身禁止描述任何可见的内搭裤、打底裤或衬裙** (no leggings, no underskirt)，以实现“大腿完全裸露”的效果。
+            - **关键约束**：虽然要求极其性感的大胆剪裁，但仍需保持基本的遮挡，**“关键部位被衣物遮挡 (privates covered)”**，营造一种“危险的性感”和“极致的诱惑”。
+          - **材质要求**：使用 "translucent silk", "chiffon", "lace", "sheer fabric" 等能体现若隐若现效果的材质。
+          - **具体示例**："wearing a cheongsam with a single ultra-high slit revealing the entire leg and side hip", "one-side cutout dress showing panties slightly", "translucent fabric draping over bare legs".
+        - 目的：最大程度展现女性的修长美腿和臀部曲线，通过单侧极高开叉和侧边镂空设计，营造极致性感、若隐若现的视觉冲击力。
+         """
+
     system_prompt = f"""你是一个【图像生成提示词扩写器】。
     当前项目已锁定画风，这是最高优先级约束。
 
@@ -398,8 +417,11 @@ def generate_player_prompts(name: str, sex: str, mark: str, style_preset=None, l
     【比例与背景判定规则（CRITICAL · 判错级别）】
     - 人物必须为明显长腿比例，头身比例 ≥ 8.5 头身。
     - 必须明确写出：上身较短（short torso）+ 下身明显更长（long legs）。
+    - 如果是女性：腿一定要细，加入细长的描述。
     - 若描述中出现或隐含“五五身 / 上下身等长 / 腿短”，视为错误输出。
     - 若未明确写出身高（Height: XXX cm），视为错误输出。
+    
+    {optimize_prompt}
 
     【纯白背景硬性规则（CRITICAL）】
     - 背景必须为：Pure White Background。
@@ -626,7 +648,8 @@ def generate_player_prompts(name: str, sex: str, mark: str, style_preset=None, l
 def generate_video_prompts(
     video_context: str,
     style_preset=None,
-    llm_profile=None
+    llm_profile=None,
+    video_model="wan2.2"
 ) -> dict:
     """
     Generate prompts for Image-to-Video generation based on scene context.
@@ -695,7 +718,52 @@ def generate_video_prompts(
                 has_dialogue = True
                 d_text = raw_dialogues # Use directly
 
+    # LTX Audio Logic
+    ltx_audio_instruction = ""
+    is_ltx = video_model in ["ltx2", "ltx2_lora"]
+    
+    if is_ltx and has_dialogue:
+        ltx_audio_instruction = """
+    6. **LTX模型音频生成指令 (CRITICAL FOR LTX)**：
+       - 当前使用的是支持音频生成的 LTX 模型。
+       - **必须在提示词中明确包含人物所说的话**。
+       - 格式要求：在描述完人物动作后，追加句式：`The character says: "[对话内容]"`。
+       - **示例**：
+         - 原句："你好，请问这里是客栈吗？"
+         - 提示词："The young man waves his hand and says: 'Hello, is this the inn?'"
+       - 请务必将对话内容翻译为中文,考虑到通用性，请**直接使用中文**。
+       - **建议策略**：为了保险起见，请输出：`The character is saying: "[对话内容]"`。
+       - **情绪与口型强化 (必须包含)**：
+         - 结合对话内容，从以下词汇中选择符合情绪的词加入 Prompt：
+         - speaking visibly, talking with mouth opening, lips moving clearly
+         - shouting loudly (如果激动/愤怒)
+         - whispering with lip movement (如果低语/秘密)
+         - crying and speaking (如果悲伤)
+         - laughing and talking (如果开心)
+       """
+
     if has_dialogue:
+        # Non-LTX Lip Sync Simulation Logic
+        extra_lip_sync = ""
+        if not is_ltx:
+            extra_lip_sync = """
+       - **口型模拟 (Lip Sync Simulation) - CRITICAL**：
+         - 虽然当前模型不生成音频，但为了让画面中的口型逼真，**必须**在提示词中包含详细的口型描述。
+         - **必须包含**：描述人物说话时的具体神态、嘴部幅度和面部肌肉变化。
+         - **核心句式**：
+           - `The character is clearly speaking: "[对话内容]"`
+           - `Mouth moving naturally to say: "[对话内容]"`
+         - **强化描述**：
+           - "lips articulating clearly" (嘴唇清晰咬字)
+           - "mouth opening and closing in rhythm" (嘴部有节奏开合)
+           - "facial muscles moving while talking" (说话时面部肌肉牵动)
+           - "jaw moving up and down" (下颚上下运动)
+         - **情绪结合**：
+           - 如果是愤怒："shouting with wide open mouth, veins visible on neck"
+           - 如果是悲伤："trembling lips, speaking with tears"
+           - 如果是平静："calmly speaking, subtle mouth movement"
+            """
+
         dialogues_constraint = f"""
     【对话动作引导 (重要)】
     本场景包含以下人物对话：
@@ -711,12 +779,17 @@ def generate_video_prompts(
          - 长句（>10字）："continuous speaking", "sustained mouth movement", "long conversation"
        - **示例**："The young man is speaking continuously, mouth opening and closing clearly", "lips moving naturally and visibly as she talks"。
        - **严禁闭嘴**：绝对禁止 "mouth closed", "silent" 等描述出现在说话角色的 Prompt 中。
+       {extra_lip_sync}
     3. **角色对应 (Crucial)**：
        - 请根据 `characters` 列表中的 `name` 与对话中的 `role` 进行匹配。
        - 必须明确指出**哪个人物**在说话。例如："The young man (陈平安) is talking..." 或 "The shopkeeper (陶掌柜) is speaking..."。
        - 如果有多人对话，请描述他们的交互状态（如：面对面交谈、一人倾听一人诉说）。
-    4. **核心红线**：禁止生成任何形式的字幕、对话框、文字气泡。禁止在画面底部生成台词文本。
-    5. 仅描述“人物说话的动作与神态”即可。
+    4. **核心红线 (字幕屏蔽 - 极重要)**：
+       - **CRITICAL**: 绝对禁止在画面底部生成任何形式的字幕、台词、文字、气泡。
+       - 模型非常容易将对话内容渲染为文字，必须在 prompt_neg 中强力压制。
+       - **正向提示词中也必须追加**：`no subtitles, no text on screen`。
+       - 在描述说话时，侧重于“动作”而非“内容展示”。
+    5. 描述“人物说话的动作与神态”。
     """
     else:
         dialogues_constraint = """
@@ -758,12 +831,30 @@ def generate_video_prompts(
        - **融合环境**：结合 `scene` 的 `visual_desc` 和 `shot_type`，描述整体氛围、光影和动态。
        - **风格保持**：必须融入【画风正向】提示词，确保视频风格与原图一致。
        - **对话动作**：如果存在对话，描述人物说话的神态动作，但**严禁生成字幕**。
+       
+       - **字幕屏蔽强化 (No Subtitles - CRITICAL)**：
+         - 在 Prompt 结尾，**必须追加**以下英文负面指令：
+         - `no subtitles, no subtitles, no on-screen text, no speech bubble`
+         - 虽然通常负面词放在 prompt_neg，但为了对抗模型强烈的加字幕倾向，**正向 Prompt 中也要显式声明“不要字幕”**。
+       
+       - **环境与动作强化 (Scene & Action Enrichment - CRITICAL)**：
+         - **环境动态化**：不要只描述静态背景。根据场景类型（室内/室外），自动添加合理的环境动态。
+           - 示例（室外）："wind blowing through hair/clothes", "leaves falling", "dust floating in light rays", "clouds moving slowly".
+           - 示例（室内）："candle light flickering", "curtains swaying gently", "dust motes dancing in the light".
+         - **人物微动作**：除了主要动作（如说话、行走），添加自然的微小肢体语言，避免人物僵硬。
+           - 示例："blinking naturally", "slight head tilt", "hand gestures while speaking", "shifting weight", "breathing movement".
+         - **光影互动**：描述人物与环境光影的交互。
+           - 示例："light reflecting on face", "shadows moving across the body", "rim light highlighting the silhouette".
+         - **目的**：让视频画面充满生机和细节，打破“静态图+嘴动”的僵硬感。
 
     2. **生成负向提示词 (prompt_neg)**：
        - 必须包含【画风反向】提示词。
        - 包含通用视频负向词（如 "static, distortion, morphing, watermarks, text, bad anatomy"）。
-       - **强制包含**："subtitles, speech bubble, text, caption, lower third" 以防止字幕生成。
-       - 返回的提示词必须使用中文。
+       - **强制包含 (字幕屏蔽 - CRITICAL)**：
+         - 必须在 Negative Prompt 中包含以下核心词汇（建议保留英文）：
+         - "subtitles, speech bubble, text, caption, lower third, lyrics, screen text, dialogue box, typography, chinese characters, english text, watermark"
+         - 这些词汇对于防止模型将对话内容渲染为字幕至关重要。
+       - 返回的提示词建议使用中文描述画面内容，但技术性负面词可保留英文。
 
     3. **生成视频参数 (fps, length)**：
        - **智能时长计算**：
@@ -780,6 +871,8 @@ def generate_video_prompts(
          - 8秒, 24FPS -> 193帧
        
     {dialogues_constraint}
+
+    {ltx_audio_instruction}
 
     【输出格式】
     必须是合法的 JSON格式：
@@ -1087,11 +1180,13 @@ def generate_merge_prompts(
     style_preset=None,
     llm_profile=None,
     scene_desc: str = "",
-    scene_type: str = "Indoor"
+    scene_type: str = "Indoor",
+    image_model: str = "qwen"
 ) -> dict:
     """
     Generate ordered merge steps and prompts for Scene Merge.
     players: list of dict { "player_id", "player_name", "appearance", "views_keys" }
+    image_model: "qwen" or "z_image_turbo" to switch view_key logic.
     """
     if not llm_profile:
         raise ValueError("No LLM Profile provided.")
@@ -1110,6 +1205,21 @@ def generate_merge_prompts(
     
     # Ensure model_name is defined before use
     model_name = llm_profile.model or "gpt-3.5-turbo"
+
+    # Z-Image Turbo Instruction Logic
+    # 统一规则：不再区分模型，所有模型遵循统一的视角逻辑
+    z_image_instruction = """
+   - **view_key 核心规则 (Unified View Logic)**：
+     - **Front**: 代表 **正面** (Facing Camera)。如果需要人物正对镜头（无论是特写还是全身），请优先返回 `front`。注意：`views_keys` 列表中可能没有 `front`，但你**必须**直接返回 `front` 字符串，系统会自动映射到基础图。
+     - **Wide**: 代表 **背影/背面** (Back View / Walking Away)。如果需要人物背对镜头，请返回 `wide`。
+     - **Close**: 代表 **特写/半身** (Close-up)。如果需要人物面部特写，优先返回 `close`。
+     - **Side/Right45/Left45**: 代表 **侧面/侧身**。
+     
+     - **特别注意**：
+       - 严禁将 `wide` 用于正面镜头。
+       - 严禁将 `front` 用于背面镜头。
+       - 即使 `views_keys` 中没有 `front`，你也应该在需要正面图时返回 `front`。
+    """
     
     # Construct Players Info for Prompt
     players_data_for_prompt = []
@@ -1205,8 +1315,11 @@ Your task is to plan the perfect composition for a single character based on the
 3. **view_key 选择 (Strict Logic)**：
    - **特写场景优先**：如果【场景基础描述】中包含“特写”、“Close-up”、“面部”、“眼神”等关键词，且 `views_keys` 中有 `close`，**必须优先选择 `close`**。如果没有 `close`，选择 `front` 或 `low`。
    - **普通场景优先**：根据动作和站位选择 `right45`, `left45`, `front` 等。
-   - **远景/俯视优先**：如果场景是俯视，优先选 或 `wide`。
+   - **背影/背面场景优先**：如果场景需要人物背对镜头，优先选 `wide`。
    - **尽量不选择**：`low`, `aerial`，因为在实际测试中效果不理想。
+   {z_image_instruction}
+   - **示例**：
+     - 如果人物站在左侧面向右侧，优先选 "right45" 或 "side"。
 
 
 输出结构 (JSON)：
@@ -1285,11 +1398,10 @@ Your task is to plan the perfect composition for a single character based on the
 
 5. **view_key 选择 (Strict Match)**：
    - 必须从角色的 `views_keys` 列表中选择最匹配的一个。
-   - **禁止滥用 "wide" 或 "front"**：如果角色有 "side", "right45", "back" 等更具体的视角，优先使用这些视角来匹配人物在场景中的朝向和站位。
+   - **禁止滥用 "wide" 或 "front"**：仅在明确需要背影或正脸特写时使用。如果角色有 "side", "right45", "back" 等更具体的视角，优先使用这些视角来匹配人物在场景中的朝向和站位。
+   {z_image_instruction}
    - **示例**：
      - 如果人物站在左侧面向右侧，优先选 "right45" 或 "side"。
-     - 如果人物背对镜头走向远方，优先选 "back"。
-     - 只有当人物正对镜头且无其他更好选择时，才使用 "wide"。
 
 输出结构 (JSON)：
 {{
@@ -1485,7 +1597,8 @@ def generate_story_assets(
 【CAMERA HINT】
 - 单人 Shot 请明确暗示构图：
   - Close-up（面部特写，背景虚化）
-  - Wide（正视全景）
+  - Front（正视全景）
+  - Wide（背影/背面图）
 
 
 【BASE_DESC RULE】

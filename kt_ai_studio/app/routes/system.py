@@ -58,3 +58,39 @@ async def get_system_logs_api(
         })
         
     return JSONResponse(result)
+
+@router.get("/api/system/version")
+async def get_system_version():
+    """
+    Get current system version from version.txt
+    """
+    try:
+        # kt_ai_studio/app/routes/system.py -> kt_ai_studio/version.txt (need to adjust path)
+        # Root is kt_ai_studio (the inner one)
+        # We assume version.txt is in the project root (kt_ai_studio)
+        version_file = Path(__file__).parent.parent.parent / "version.txt"
+        if version_file.exists():
+            version = version_file.read_text(encoding="utf-8").strip()
+            return JSONResponse({"version": version})
+        else:
+            return JSONResponse({"version": "1.0.0"})
+    except Exception as e:
+        return JSONResponse({"version": "Unknown", "error": str(e)})
+
+@router.get("/api/system/check_update")
+async def check_system_update():
+    """
+    Check for updates from GitHub (Backend Proxy to avoid CORS)
+    """
+    import aiohttp
+    github_url = "https://raw.githubusercontent.com/oskey/kt-ai-Studio/main/version.txt"
+    try:
+        async with aiohttp.ClientSession() as client:
+            async with client.get(github_url, timeout=5) as resp:
+                if resp.status == 200:
+                    remote_version = await resp.text()
+                    return JSONResponse({"remote_version": remote_version.strip()})
+                else:
+                    return JSONResponse({"error": f"GitHub returned {resp.status}"}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)

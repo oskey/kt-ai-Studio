@@ -21,6 +21,8 @@ async def settings_page(request: Request, db: Session = Depends(session.get_db))
 @router.post("/settings/update")
 async def update_settings(
     request: Request,
+    image_model: str = Form(...),
+    video_model: str = Form(...),
     player_gen_width: int = Form(...),
     player_gen_height: int = Form(...),
     player_gen_seed: int = Form(...),
@@ -32,9 +34,12 @@ async def update_settings(
     video_gen_length: int = Form(...),
     video_gen_fps: int = Form(...),
     video_gen_seed: int = Form(...),
+    optimize_ancient_costume: str = Form(None),
     db: Session = Depends(session.get_db)
 ):
     updates = {
+        "image_model": str(image_model),
+        "video_model": str(video_model),
         "player_gen_width": str(player_gen_width),
         "player_gen_height": str(player_gen_height),
         "player_gen_seed": str(player_gen_seed),
@@ -45,7 +50,8 @@ async def update_settings(
         "video_gen_height": str(video_gen_height),
         "video_gen_length": str(video_gen_length),
         "video_gen_fps": str(video_gen_fps),
-        "video_gen_seed": str(video_gen_seed)
+        "video_gen_seed": str(video_gen_seed),
+        "optimize_ancient_costume": "on" if optimize_ancient_costume else "off"
     }
     
     for key, val in updates.items():

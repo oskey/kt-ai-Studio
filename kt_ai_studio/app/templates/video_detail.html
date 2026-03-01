@@ -148,7 +148,7 @@
                         您的浏览器不支持视频播放。
                     </video>
                     <div class="mt-2 text-secondary small">
-                        生成于: {{ video.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                        生成于: {{ (video.updated_at + timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S') }}
                     </div>
                     {% else %}
                     <div class="bg-light rounded-3 d-flex align-items-center justify-content-center text-secondary" style="height: 400px; border: 2px dashed #dee2e6;">

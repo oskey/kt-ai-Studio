@@ -199,6 +199,11 @@ class TaskManager:
         if not llm_profile:
              pass
         
+        # Get System Config for Ancient Costume Optimization
+        sys_configs = db.query(models.SystemConfig).all()
+        sys_conf = {c.key: c.value for c in sys_configs}
+        optimize_ancient = sys_conf.get('optimize_ancient_costume') == 'on'
+        
         # Fake progress for UX
         task.progress = 10
         db.commit()
@@ -228,7 +233,8 @@ class TaskManager:
             player.player_sex, 
             player.player_mark,
             style_preset=style,
-            llm_profile=llm_profile
+            llm_profile=llm_profile,
+            optimize_ancient=optimize_ancient
         )
         
         if batch_info:
@@ -286,11 +292,17 @@ class TaskManager:
         if style:
             pass
 
+        # Get System Config for Image Model
+        sys_configs = db.query(models.SystemConfig).all()
+        sys_conf = {c.key: c.value for c in sys_configs}
+        image_model = sys_conf.get('image_model', 'qwen')
+
         try:
             result = self.comfy_runner.run_gen_base(
                 task, 
                 callback=progress_callback,
-                cancel_check_func=lambda: not self.running
+                cancel_check_func=lambda: not self.running,
+                image_model=image_model
             )
             
             # Update Player
@@ -378,11 +390,17 @@ class TaskManager:
                     task.progress = progress
                     db.commit()
         
+        # Get System Config for Image Model
+        sys_configs = db.query(models.SystemConfig).all()
+        sys_conf = {c.key: c.value for c in sys_configs}
+        image_model = sys_conf.get('image_model', 'qwen')
+
         try:
             result = self.comfy_runner.run_gen_scene_base(
                 task,
                 callback=progress_callback,
-                cancel_check_func=lambda: not self.running
+                cancel_check_func=lambda: not self.running,
+                image_model=image_model
             )
             
             # Update Scene
@@ -726,10 +744,16 @@ class TaskManager:
             
         from app.services.llm.openai_provider import generate_video_prompts
         
+        # Get System Config for Video Model
+        sys_configs = db.query(models.SystemConfig).all()
+        sys_conf = {c.key: c.value for c in sys_configs}
+        video_model = sys_conf.get('video_model', 'wan2.2')
+
         prompts = generate_video_prompts(
             video_context=scene.video_llm_context,
             style_preset=project.style,
-            llm_profile=llm_profile
+            llm_profile=llm_profile,
+            video_model=video_model
         )
         
         # Save Result
@@ -839,11 +863,17 @@ class TaskManager:
                     task.progress = progress
                     db.commit()
         
+        # Get System Config for Video Model
+        sys_configs = db.query(models.SystemConfig).all()
+        sys_conf = {c.key: c.value for c in sys_configs}
+        video_model = sys_conf.get('video_model', 'wan2.2')
+
         try:
             result = self.comfy_runner.run_gen_video(
                 task,
                 callback=progress_callback,
-                cancel_check_func=lambda: not self.running
+                cancel_check_func=lambda: not self.running,
+                video_model=video_model
             )
             
             # Update Video
@@ -934,6 +964,11 @@ class TaskManager:
         task.progress = 5
         db.commit()
         
+        # Get System Config for Image Model
+        sys_configs = db.query(models.SystemConfig).all()
+        sys_conf = {c.key: c.value for c in sys_configs}
+        image_model = sys_conf.get('image_model', 'qwen')
+
         try:
             merge_plan = generate_merge_prompts(
                 scene_base_desc=scene.base_desc,
@@ -941,7 +976,8 @@ class TaskManager:
                 style_preset=style,
                 llm_profile=llm_profile,
                 scene_desc=scene.scene_desc or "",
-                scene_type=scene.scene_type or "Indoor"
+                scene_type=scene.scene_type or "Indoor",
+                image_model=image_model
             )
             
             if "layout_reasoning" in merge_plan:
@@ -1032,6 +1068,12 @@ class TaskManager:
                 except:
                     pass
             
+            # Special handling: if LLM explicitly requested "front" (base image), or if no view found yet
+            # Unified Rule: Front always means base image (facing camera)
+            if view_key == "front":
+                 if player.base_image_path:
+                     player_img_path = player.base_image_path
+
             if not player_img_path and player.base_image_path:
                 player_img_path = player.base_image_path
                 

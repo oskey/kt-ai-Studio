@@ -16,14 +16,19 @@ class ComfyRunner:
         with open(os.path.join(self.workflows_dir, filename), 'r', encoding='utf-8') as f:
             return json.load(f)
 
-    def run_gen_base(self, task: models.Task, callback=None, cancel_check_func=None):
+    def run_gen_base(self, task: models.Task, callback=None, cancel_check_func=None, image_model="qwen"):
         """
         Runs the GEN_BASE workflow (txt2img).
         callback: function(event_type, data)
         cancel_check_func: function() -> bool
         """
         player = task.player
-        workflow = self._load_workflow("wf_base_character.json")
+        
+        workflow_file = "wf_base_character.json"
+        if image_model == "z_image_turbo":
+            workflow_file = "image_z_image_turbo.json"
+            
+        workflow = self._load_workflow(workflow_file)
         
         # Parse inputs from task payload
         payload = {}
@@ -42,22 +47,6 @@ class ComfyRunner:
         if seed == 0:
             seed = random.randint(1, 9999999999)
         
-        # 6.3 Replace fields
-        # - Pos prompt: id="91" -> inputs.value
-        # - Neg prompt: id="92:7" -> inputs.text (Wait, check node type, usually CLIPTextEncode is inputs.text, Primitive is inputs.value)
-        #   The user said: id="92:7" -> inputs.text. I will follow instructions.
-        # - Resolution: id="92:58" -> inputs.width / inputs.height
-        # - Sampler: id="92:3" -> inputs.seed ...
-        # - SaveImage: id="90" -> inputs.filename_prefix
-        
-        # Important: The user provided node IDs like "92:7". This implies group nodes or specific complex IDs? 
-        # Usually ComfyUI IDs are strings like "1", "2". "92:7" suggests maybe a Group Node or the user is looking at a specific UI representation.
-        # Since I don't have the actual JSON, I must rely on the user's IDs. 
-        # However, "92:7" is not a standard top-level node ID format usually (unless it's nested).
-        # But I will use them as keys in the dictionary.
-        
-        # NOTE: If the workflow was exported as API format, the IDs are keys in the JSON object.
-        
         # Helper to safely set input
         def set_input(node_id, field, value):
             if node_id in workflow:
@@ -67,64 +56,64 @@ class ComfyRunner:
             else:
                 print(f"Warning: Node {node_id} not found in workflow")
 
-        # 1. Positive Prompt
-        # Check if style_pos is provided in payload (passed via task.payload_json or injected via arguments?)
-        # TaskManager doesn't modify payload_json for style injection. 
-        # But we can look up project style? ComfyRunner shouldn't do DB lookups.
-        # TaskManager should have passed it.
-        # Let's see... TaskManager calls run_gen_base(task, ...).
-        # We can access task.player.project.style inside run_gen_base!
-        
+        # Style Prompts
         style = task.player.project.style
         style_pos = style.style_pos if style else ""
         style_neg = style.style_neg if style else ""
         
-        # Combine Style + Player Prompt
-        # Requirement: "所有给 Qwen / Wan2.2 的提示词，画风只能来自项目 preset"
-        # Does this mean ONLY style preset? No, "画风只能来自..." implies style dictates the vibe.
-        # Player prompt provides subject details.
-        # So we concatenate: Style Prefix + Player Description
-        
         final_pos = f"{style_pos}\n{player.prompt_pos or ''}"
         final_neg = f"{style_neg}\n{player.prompt_neg or ''}"
         
-        set_input("91", "value", final_pos)
-        
-        # 2. Negative Prompt
-        set_input("92:7", "text", final_neg)
-        
-        # 3. Resolution
-        set_input("92:58", "width", width)
-        set_input("92:58", "height", height)
-        set_input("92:58", "batch_size", batch_size)
-        
-        # 4. Sampler
-        set_input("92:3", "seed", seed)
-        # Other sampler params could be set here
-        
-        # 5. SaveImage Prefix
-        # Format: {task_id}_base
         filename_prefix = f"{task.id}_base"
-        set_input("90", "filename_prefix", filename_prefix)
+        
+        if image_model == "z_image_turbo":
+            # Z-Image Turbo Workflow
+            # Prompt: 57:27
+            set_input("57:27", "text", final_pos)
+            # No Negative Prompt support
+            
+            # Resolution
+            set_input("57:13", "width", width)
+            set_input("57:13", "height", height)
+            set_input("57:13", "batch_size", batch_size)
+            
+            # Seed
+            set_input("57:3", "seed", seed)
+            
+            # Save
+            set_input("9", "filename_prefix", filename_prefix)
+            
+            print("\n" + "="*60)
+            print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
+            print(f" Workflow File: {workflow_file} (Z-Image Turbo)")
+            print("-" * 60)
+            print(f"  -> Prompt: {final_pos[:100]}...")
+            print(f"  -> Size: {width}x{height}")
+            print(f"  -> Seed: {seed}")
+            print("="*60 + "\n")
+            
+        else:
+            # Qwen-Image 2512 Workflow (Default)
+            set_input("91", "value", final_pos)
+            set_input("92:7", "text", final_neg)
+            
+            set_input("92:58", "width", width)
+            set_input("92:58", "height", height)
+            set_input("92:58", "batch_size", batch_size)
+            
+            set_input("92:3", "seed", seed)
+            
+            set_input("90", "filename_prefix", filename_prefix)
 
-        # --- Debug Logging for ComfyUI API ---
-        print("\n" + "="*60)
-        print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
-        print(f" Workflow File: wf_base_character.json")
-        print("-" * 60)
-        print(" [Node 91] Positive Prompt")
-        print(f"  -> value: {final_pos[:100]}...")
-        print("-" * 30)
-        print(" [Node 92:7] Negative Prompt")
-        print(f"  -> text: {final_neg[:100]}...")
-        print("-" * 30)
-        print(" [Node 92:58] Resolution")
-        print(f"  -> width: {width}, height: {height}")
-        print("-" * 30)
-        print(" [Node 92:3] Sampler")
-        print(f"  -> seed: {seed}")
-        print("="*60 + "\n")
-        # -------------------------------------
+            print("\n" + "="*60)
+            print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
+            print(f" Workflow File: {workflow_file} (Qwen)")
+            print("-" * 60)
+            print(f"  -> Pos: {final_pos[:100]}...")
+            print(f"  -> Neg: {final_neg[:100]}...")
+            print(f"  -> Size: {width}x{height}")
+            print(f"  -> Seed: {seed}")
+            print("="*60 + "\n")
 
         # Submit
         print(f"Submitting GEN_BASE task {task.id} to ComfyUI...")
@@ -141,7 +130,6 @@ class ComfyRunner:
         history = self.client.wait_for_completion(prompt_id, callback=internal_callback, cancel_check_func=cancel_check_func)
         
         # Download and Organize
-        # Target: output/<project_code>/players/<player_id>_<player_name>/base/
         project_code = task.project.project_code
         player_folder_name = f"{player.id}_{player.player_name}"
         save_dir = os.path.join(config.OUTPUT_DIR, project_code, "players", player_folder_name, "base")
@@ -150,36 +138,30 @@ class ComfyRunner:
         results = self.client.download_outputs(history, save_dir)
         
         # Find the result image
-        # Assuming node "90" produced the image
-        if "90" in results and results["90"]:
-            # Get the first image path relative to project root or static mount
-            abs_path = results["90"][0]
-            # Convert to relative path for DB: "output/..."
-            # We mounted /output to config.OUTPUT_DIR
-            # So the URL path should be output/project_code/...
-            
-            # The physical path is abs_path.
-            # config.OUTPUT_DIR is x:\...\output
-            # We want the path relative to the app root (kt_ai_studio) to serve it via StaticFiles?
-            # Actually, we mounted /output to the physical OUTPUT_DIR.
-            # So the web path is output/project_code/players/...
-            
+        # Node ID depends on workflow
+        save_node_id = "9" if image_model == "z_image_turbo" else "90"
+        
+        if save_node_id in results and results[save_node_id]:
+            abs_path = results[save_node_id][0]
             rel_path = os.path.relpath(abs_path, os.path.dirname(config.OUTPUT_DIR))
-            # rel_path is like "output\project\..."
-            # Normalize to forward slashes
             rel_path = rel_path.replace("\\", "/")
             
             return {"base_image_path": rel_path}
         else:
-            raise Exception("No image output found from node 90")
+            raise Exception(f"No image output found from node {save_node_id}")
 
-    def run_gen_scene_base(self, task: models.Task, callback=None, cancel_check_func=None):
+    def run_gen_scene_base(self, task: models.Task, callback=None, cancel_check_func=None, image_model="qwen"):
         """
         Runs the GEN_SCENE_BASE workflow (txt2img).
-        Reuses wf_base_character.json but with Scene prompts.
+        Reuses wf_base_character.json or image_z_image_turbo.json but with Scene prompts.
         """
         scene = task.scene
-        workflow = self._load_workflow("wf_base_character.json")
+        
+        workflow_file = "wf_base_character.json"
+        if image_model == "z_image_turbo":
+            workflow_file = "image_z_image_turbo.json"
+            
+        workflow = self._load_workflow(workflow_file)
         
         # Parse inputs
         payload = {}
@@ -206,69 +188,56 @@ class ComfyRunner:
                 print(f"Warning: Node {node_id} not found in workflow")
 
         # 1. Prompts
-        # Project Style
-        # Requirement: "style_pos + \n + scene.prompt_pos"
-        # Since scene.prompt_pos is generated with style awareness, maybe we just use it?
-        # But instructions say: "style_pos + \n + scene.prompt_pos"
-        # Let's do as instructed.
-        
-        # We need to fetch the style object again?
-        # Task object has scene which has style_id.
-        # But we can access scene.project.style if not snapshotted?
-        # Or we can assume task payload or DB logic handled it.
-        # Let's use scene.project.style (current style) or scene.style_id?
-        # Scene creation bound style_id.
-        # Ideally we fetch that style. But scene.project.style is easier.
-        # Let's assume project style is what we want (Project Lock).
-        
         style = scene.project.style
         style_pos = style.style_pos if style else ""
         style_neg = style.style_neg if style else ""
         
-        # System 补强 NEG
-        # Note: LLM logic already appends mandatory negatives in normalize_scene_negative_prompt?
-        # Wait, normalize_scene_negative_prompt does append mandatory negatives.
-        # But the Requirement 7.2 says: "style_neg + \n + scene.prompt_neg + \n + 系统补强neg"
-        # If `scene.prompt_neg` already contains style_neg and system_neg (from normalize function), then we might double add.
-        # Let's check `normalize_scene_negative_prompt` in openai_provider.py.
-        # It adds style_neg, raw_neg, and mandatory_neg.
-        # So `scene.prompt_neg` ALREADY contains everything!
-        # So for NEG, we just use `scene.prompt_neg`.
-        
         final_pos = f"{style_pos}\n{scene.prompt_pos}"
         final_neg = scene.prompt_neg # Already normalized and merged
         
-        set_input("91", "value", final_pos)
-        set_input("92:7", "text", final_neg)
-        
-        # 2. Resolution & Seed
-        set_input("92:58", "width", width)
-        set_input("92:58", "height", height)
-        set_input("92:58", "batch_size", batch_size)
-        set_input("92:3", "seed", seed)
-        
-        # 3. SaveImage Prefix
         filename_prefix = f"{task.id}_scene_base"
-        set_input("90", "filename_prefix", filename_prefix)
+        
+        if image_model == "z_image_turbo":
+            # Z-Image Turbo
+            set_input("57:27", "text", final_pos)
+            # No negative prompt
+            
+            set_input("57:13", "width", width)
+            set_input("57:13", "height", height)
+            set_input("57:13", "batch_size", batch_size)
+            set_input("57:3", "seed", seed)
+            set_input("9", "filename_prefix", filename_prefix)
+            
+            print("\n" + "="*60)
+            print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
+            print(f" Workflow File: {workflow_file} (Z-Image Turbo)")
+            print("-" * 60)
+            print(f"  -> Pos: {final_pos[:100]}...")
+            print(f"  -> Size: {width}x{height}")
+            print(f"  -> Seed: {seed}")
+            print("="*60 + "\n")
+            
+        else:
+            # Qwen
+            set_input("91", "value", final_pos)
+            set_input("92:7", "text", final_neg)
+            
+            set_input("92:58", "width", width)
+            set_input("92:58", "height", height)
+            set_input("92:58", "batch_size", batch_size)
+            set_input("92:3", "seed", seed)
+            
+            set_input("90", "filename_prefix", filename_prefix)
 
-        # --- Debug Logging for ComfyUI API ---
-        print("\n" + "="*60)
-        print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
-        print(f" Workflow File: wf_base_character.json")
-        print("-" * 60)
-        print(" [Node 91] Positive Prompt")
-        print(f"  -> value: {final_pos[:100]}...")
-        print("-" * 30)
-        print(" [Node 92:7] Negative Prompt")
-        print(f"  -> text: {final_neg[:100]}...")
-        print("-" * 30)
-        print(" [Node 92:58] Resolution")
-        print(f"  -> width: {width}, height: {height}")
-        print("-" * 30)
-        print(" [Node 92:3] Sampler")
-        print(f"  -> seed: {seed}")
-        print("="*60 + "\n")
-        # -------------------------------------
+            print("\n" + "="*60)
+            print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
+            print(f" Workflow File: {workflow_file} (Qwen)")
+            print("-" * 60)
+            print(f"  -> Pos: {final_pos[:100]}...")
+            print(f"  -> Neg: {final_neg[:100]}...")
+            print(f"  -> Size: {width}x{height}")
+            print(f"  -> Seed: {seed}")
+            print("="*60 + "\n")
 
         # Submit
         print(f"Submitting GEN_SCENE_BASE task {task.id}...")
@@ -291,12 +260,14 @@ class ComfyRunner:
         print(f"Downloading outputs to {save_dir}...")
         results = self.client.download_outputs(history, save_dir)
         
-        if "90" in results and results["90"]:
-            abs_path = results["90"][0]
+        save_node_id = "9" if image_model == "z_image_turbo" else "90"
+        
+        if save_node_id in results and results[save_node_id]:
+            abs_path = results[save_node_id][0]
             rel_path = os.path.relpath(abs_path, os.path.dirname(config.OUTPUT_DIR)).replace("\\", "/")
             return {"base_image_path": rel_path}
         else:
-            raise Exception("No image output found from node 90")
+            raise Exception(f"No image output found from node {save_node_id}")
 
     def run_gen_8views(self, task: models.Task, callback=None, cancel_check_func=None):
         """
@@ -717,14 +688,20 @@ class ComfyRunner:
             
         raise Exception("No image output found for Scene Merge from Node 60")
 
-    def run_gen_video(self, task: models.Task, callback=None, cancel_check_func=None):
+    def run_gen_video(self, task: models.Task, callback=None, cancel_check_func=None, video_model="wan2.1"):
         """
-        Runs the GEN_VIDEO workflow (Wan2.2 Image-to-Video).
+        Runs the GEN_VIDEO workflow (Wan2.2 or Ltx2 Image-to-Video).
         """
         video = task.video
         scene = video.scene
         
-        workflow = self._load_workflow("video_wan2_2_14B_i2v.json")
+        workflow_file = "video_wan2_2_14B_i2v.json"
+        if video_model == "ltx2":
+            workflow_file = "video_ltx2_i2v.json"
+        elif video_model == "ltx2_lora":
+            workflow_file = "video_ltx2_i2v(lora).json"
+            
+        workflow = self._load_workflow(workflow_file)
         
         # Parse inputs
         payload = {}
@@ -740,24 +717,6 @@ class ComfyRunner:
         length = payload.get("length", 81)
         fps = payload.get("fps", 16)
         seed = payload.get("seed", 0)
-        # Remove the random seed logic if seed is 0, because 0 is a valid seed? 
-        # Actually user wants to use the configured seed.
-        # But if the payload explicitly sends 0, does it mean "random" or "seed 0"?
-        # In other functions (gen_base), 0 means random.
-        # But here the user says: "why isn't it 264590 as configured in web page? It used a random value."
-        # This implies the web page sent 264590, but the backend ignored it or overwrote it?
-        # Or maybe the web page sent 0 (if user didn't change it and default was 0 before)?
-        # Wait, if the user configured 264590 in the UI, payload.get("seed") should be 264590.
-        # If payload.get("seed") is 264590, the condition `if seed == 0` is false, so it should use 264590.
-        # The log shows "Noise Seed -> noise_seed: 3667400612", which looks like a random int.
-        # This means `seed` was 0 when entering the condition.
-        # So payload.get("seed") returned 0.
-        # Why did the payload contain 0?
-        # Maybe the UI form didn't submit the updated value?
-        # Or the task payload wasn't constructed correctly?
-        # The task is created in videos.py: generate_video_route.
-        # It creates a Task. But does it put the video parameters into task.payload_json?
-        # Let's check videos.py.
         
         if seed == 0:
             seed = random.randint(1, 9999999999)
@@ -791,63 +750,65 @@ class ComfyRunner:
             else:
                 print(f"Warning: Node {node_id} not found in workflow")
                 
-        # 1. Input Image (Node 97)
-        set_input("97", "image", uploaded_filename)
-        
-        # 2. Prompts
-        set_input("93", "text", prompt_pos)
-        set_input("89", "text", prompt_neg)
-        
-        # 3. Parameters (Node 98: WanImageToVideo)
-        set_input("98", "width", width)
-        set_input("98", "height", height)
-        set_input("98", "length", length)
-        
-        # 4. FPS (Node 94: CreateVideo) - wait, check JSON
-        # Node 94 inputs: fps, images
-        set_input("94", "fps", fps)
-        
-        # 5. Seed (Node 86: KSamplerAdvanced - Noise Seed)
-        set_input("86", "noise_seed", seed)
-        # Node 85 also has noise_seed, usually they should match or be controlled?
-        # User instructions: "86的 noise_seed，可以在页面配置后..."
-        # Just 86 mentioned. But usually sampler chain needs consistent seed or handled by Comfy.
-        # Let's set 85 too if it exists and has seed, just in case, or stick to 86 as requested.
-        # The provided JSON has 85 noise_seed=0 (fixed?) and 86 noise_seed=264590.
-        # I will set 86 as requested.
-        
-        # 6. Save Video (Node 108)
         filename_prefix = f"video_{task.id}"
-        set_input("108", "filename_prefix", filename_prefix)
-        
-        # --- Debug Logging for ComfyUI API ---
-        print("\n" + "="*60)
-        print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
-        print(f" Workflow File: video_wan2_2_14B_i2v.json")
-        print("-" * 60)
-        print(" [Node 97] LoadImage")
-        print(f"  -> image: {uploaded_filename}")
-        print("-" * 30)
-        print(" [Node 93] Positive Prompt")
-        print(f"  -> text: {prompt_pos[:100]}...")
-        print("-" * 30)
-        print(" [Node 89] Negative Prompt")
-        print(f"  -> text: {prompt_neg[:100]}...")
-        print("-" * 30)
-        print(" [Node 98] WanImageToVideo Params")
-        print(f"  -> width: {width}, height: {height}, length: {length}")
-        print("-" * 30)
-        print(" [Node 94] FPS")
-        print(f"  -> fps: {fps}")
-        print("-" * 30)
-        print(" [Node 86] Noise Seed")
-        print(f"  -> noise_seed: {seed}")
-        print("-" * 30)
-        print(" [Node 108] Filename Prefix")
-        print(f"  -> filename_prefix: {filename_prefix}")
-        print("="*60 + "\n")
-        # -------------------------------------
-        
+
+        if video_model in ["ltx2", "ltx2_lora"]:
+            # LTX2 / LTX2 Lora Mapping
+            # Image: 98
+            set_input("98", "image", uploaded_filename)
+            
+            # Resize: 102
+            set_input("102", "width", width)
+            set_input("102", "height", height)
+            
+            # Prompts
+            set_input("92:3", "text", prompt_pos)
+            set_input("92:4", "text", prompt_neg)
+            
+            # Length (frames)
+            set_input("92:62", "value", length)
+            
+            # Seed
+            set_input("92:67", "noise_seed", seed)
+            set_input("92:11", "noise_seed", seed)
+            
+            # Save
+            set_input("75", "filename_prefix", filename_prefix)
+            
+            print("\n" + "="*60)
+            print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
+            print(f" Workflow File: {workflow_file} (LTX2)")
+            print("-" * 60)
+            print(f"  -> Pos: {prompt_pos[:100]}...")
+            print(f"  -> Size: {width}x{height}, Length: {length}")
+            print(f"  -> Seed: {seed}")
+            print("="*60 + "\n")
+            
+        else:
+            # Wan2.1 Mapping (Default)
+            set_input("97", "image", uploaded_filename)
+            set_input("93", "text", prompt_pos)
+            set_input("89", "text", prompt_neg)
+            
+            set_input("98", "width", width)
+            set_input("98", "height", height)
+            set_input("98", "length", length)
+            
+            set_input("94", "fps", fps)
+            
+            set_input("86", "noise_seed", seed)
+            
+            set_input("108", "filename_prefix", filename_prefix)
+            
+            print("\n" + "="*60)
+            print(f" [ComfyUI API Request] Task: {task.task_type} | ID: {task.id}")
+            print(f" Workflow File: {workflow_file} (Wan2.1)")
+            print("-" * 60)
+            print(f"  -> Pos: {prompt_pos[:100]}...")
+            print(f"  -> Size: {width}x{height}, Length: {length}, FPS: {fps}")
+            print(f"  -> Seed: {seed}")
+            print("="*60 + "\n")
+
         # Submit
         print(f"Submitting GEN_VIDEO task {task.id}...")
         response = self.client.queue_prompt(workflow)
@@ -874,13 +835,15 @@ class ComfyRunner:
         print(f"Downloading outputs to {save_dir}...")
         results = self.client.download_outputs(history, save_dir)
         
-        # Find video output (Node 108)
-        if "108" in results and results["108"]:
-            abs_path = results["108"][0] # First video
+        # Find video output
+        save_node_id = "75" if video_model in ["ltx2", "ltx2_lora"] else "108"
+        
+        if save_node_id in results and results[save_node_id]:
+            abs_path = results[save_node_id][0] # First video
             
             # Rel path
             base_dir = os.path.dirname(config.OUTPUT_DIR)
             rel_path = os.path.relpath(abs_path, base_dir).replace("\\", "/")
             return {"video_path": rel_path}
             
-        raise Exception("No video output found from Node 108")
+        raise Exception(f"No video output found from Node {save_node_id}")

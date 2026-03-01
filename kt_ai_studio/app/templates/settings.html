@@ -12,6 +12,54 @@
 
     <form method="POST" action="/settings/update">
         <div class="row g-4">
+            <!-- Model Settings -->
+            <div class="col-12">
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-header bg-white border-bottom-0 pt-4 px-4 pb-0">
+                        <div class="d-flex align-items-center mb-2">
+                            <div class="icon-square bg-warning bg-opacity-10 text-warning rounded-3 me-3">
+                                <i class="bi bi-cpu fs-4"></i>
+                            </div>
+                            <h5 class="fw-bold mb-0">模型选择 (Model Selection)</h5>
+                        </div>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="row">
+                            <!-- Image Model -->
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-secondary small fw-bold">图片生成模型 (Image Model)</label>
+                                <select name="image_model" class="form-select bg-light border-0">
+                                    <option value="qwen" {% if config.get('image_model', 'qwen') == 'qwen' %}selected{% endif %}>Qwen-Image 2512 (Default)</option>
+                                    <option value="z_image_turbo" {% if config.get('image_model') == 'z_image_turbo' %}selected{% endif %}>Z-Image Turbo</option>
+                                </select>
+                                <div class="form-text mt-2 small text-muted">
+                                    <ul class="mb-0 ps-3">
+                                        <li><strong>Qwen-Image 2512:</strong> 通义万相大模型，画质精细，语义理解能力强。支持负向提示词。</li>
+                                        <li><strong>Z-Image Turbo:</strong> 极速生成模型，效率极高。<b>注意：不支持负向提示词。</b></li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <!-- Video Model -->
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label text-secondary small fw-bold">视频生成模型 (Video Model)</label>
+                                <select name="video_model" class="form-select bg-light border-0">
+                                    <option value="wan2.2" {% if config.get('video_model', 'wan2.2') == 'wan2.2' %}selected{% endif %}>Wan2.2 (Default)</option>
+                                    <option value="ltx2" {% if config.get('video_model') == 'ltx2' %}selected{% endif %}>Ltx2</option>
+                                    <option value="ltx2_lora" {% if config.get('video_model') == 'ltx2_lora' %}selected{% endif %}>Ltx2 (Lora)</option>
+                                </select>
+                                <div class="form-text mt-2 small text-muted">
+                                    <ul class="mb-0 ps-3">
+                                        <li><strong>Wan2.2:</strong> 万象2.2 (14B)-高低噪 视频模型，具有极佳的时序一致性和运动质量。</li>
+                                        <li><strong>Ltx2:</strong> 视频中人物会说话，低显存优化，能够生成较长的视频。</li>
+                                        <li><strong>Ltx2 (Lora):</strong> 搭载运镜控制 LoRA (Dolly Left) 的 LTX2 模型，可以生成对话，低显存优化，镜头感强化。</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Player Generation Settings -->
             <div class="col-12">
                 <div class="card border-0 shadow-sm rounded-4">
@@ -37,6 +85,16 @@
                                 <label class="form-label text-secondary small fw-bold">默认随机种子 (Seed)</label>
                                 <input type="number" name="player_gen_seed" class="form-control bg-light border-0" value="{{ config.get('player_gen_seed', 264590) }}" required>
                                 <div class="form-text mt-1">固定种子可确保不同批次的一致性，设为 -1 则随机。</div>
+                            </div>
+                            <div class="col-md-12 mb-3">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="optimize_ancient_costume" name="optimize_ancient_costume" {% if config.get('optimize_ancient_costume') == 'on' %}checked{% endif %}>
+                                    <label class="form-check-label fw-bold" for="optimize_ancient_costume">服装优化</label>
+                                    <div class="form-text mt-1">
+                                        <i class="bi bi-magic text-primary me-1"></i>
+                                        针对女性角色的古风/仙侠/历史题材服装进行美化（如改良旗袍、半透明纱衣、显露曲线），增强视觉吸引力。
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

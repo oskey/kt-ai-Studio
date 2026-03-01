@@ -91,9 +91,50 @@
     <!-- Footer -->
     <footer class="bg-white border-top py-4 mt-auto">
         <div class="container text-center">
-            <p class="text-muted small mb-0">&copy; 2026 <a href="https://www.x-kt.com" target="_blank" class="text-decoration-none text-muted">KT AI Studio</a>.</p>
+            <p class="text-muted small mb-0">
+                &copy; 2026 <a href="https://www.x-kt.com" target="_blank" class="text-decoration-none text-muted">KT AI Studio</a>.
+                <span id="app-version" class="ms-2 badge bg-light text-secondary border">v1.0.0</span>
+            </p>
         </div>
     </footer>
+
+    <!-- Version Update Modal -->
+    <div class="modal fade" id="versionUpdateModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-header border-0 bg-primary text-white p-4 position-relative">
+                    <div class="position-absolute top-0 end-0 p-3 opacity-50">
+                        <i class="bi bi-rocket-takeoff fs-1"></i>
+                    </div>
+                    <div>
+                        <h5 class="modal-title fw-bold mb-1"><i class="bi bi-stars me-2"></i>发现新版本</h5>
+                        <p class="mb-0 opacity-75 small">KT AI Studio 有新的更新可用</p>
+                    </div>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="d-flex align-items-center mb-4">
+                        <div class="rounded-3 bg-light p-3 text-center me-3" style="min-width: 80px;">
+                            <div class="text-secondary x-small mb-1">当前版本</div>
+                            <div class="fw-bold font-monospace" id="current-version-display">v1.0.0</div>
+                        </div>
+                        <div class="display-6 text-muted mx-2"><i class="bi bi-arrow-right"></i></div>
+                        <div class="rounded-3 bg-success-subtle text-success p-3 text-center ms-3 flex-grow-1">
+                            <div class="x-small mb-1 opacity-75">最新版本</div>
+                            <div class="fw-bold font-monospace fs-5" id="remote-version-display">...</div>
+                        </div>
+                    </div>
+                    
+                    <p class="text-secondary small mb-0">建议您更新到最新版本以获得更好的体验和新功能。</p>
+                </div>
+                <div class="modal-footer border-top-0 p-3 bg-light">
+                    <button type="button" class="btn btn-link text-secondary text-decoration-none btn-sm" onclick="ignoreUpdate()">暂不更新</button>
+                    <a href="https://github.com/oskey/kt-ai-Studio" target="_blank" class="btn btn-primary rounded-pill px-4 fw-medium shadow-sm">
+                        <i class="bi bi-github me-2"></i>前往更新
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Toast Container -->
     <div class="toast-container position-fixed top-50 start-50 translate-middle p-3" id="toastContainer" style="z-index: 9999;"></div>
@@ -102,6 +143,73 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', path='/main.js') }}"></script>
     <script>
+        // Version Check Logic
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 1. Get Local Version
+            let localVersion = "1.0.0";
+            try {
+                const res = await fetch('/api/system/version');
+                const data = await res.json();
+                if (data.version) {
+                    localVersion = data.version;
+                    document.getElementById('app-version').innerText = 'v' + localVersion;
+                    document.getElementById('current-version-display').innerText = 'v' + localVersion;
+                }
+            } catch (e) { console.error("Failed to fetch local version", e); }
+
+            // 2. Check Remote Version (Only if not ignored in this session)
+            if (!sessionStorage.getItem('update_ignored')) {
+                checkRemoteVersion(localVersion);
+            }
+        });
+
+        async function checkRemoteVersion(localVer) {
+            const githubUrl = "https://raw.githubusercontent.com/oskey/kt-ai-Studio/main/version.txt";
+            // Use a proxy or direct fetch if CORS allows (GitHub Raw usually has CORS issues from localhost)
+            // Strategy: We can try fetching via backend proxy if needed, but let's try direct first.
+            // If direct fails due to CORS, we might need a simple backend proxy endpoint.
+            // For now, let's assume we implement a backend proxy for stability.
+            
+            // Actually, let's use a simple backend endpoint to fetch remote version to avoid CORS
+            // We will add this endpoint to system.py later.
+            // For now, let's assume we add /api/system/check_update
+            
+            try {
+                const res = await fetch('/api/system/check_update');
+                const data = await res.json();
+                
+                if (data.remote_version) {
+                    const remoteVer = data.remote_version.trim();
+                    if (compareVersions(remoteVer, localVer) > 0) {
+                        document.getElementById('remote-version-display').innerText = 'v' + remoteVer;
+                        const modal = new bootstrap.Modal(document.getElementById('versionUpdateModal'));
+                        modal.show();
+                    }
+                }
+            } catch (e) {
+                console.warn("Version check failed:", e);
+            }
+        }
+
+        function compareVersions(v1, v2) {
+            const p1 = v1.replace('v','').split('.').map(Number);
+            const p2 = v2.replace('v','').split('.').map(Number);
+            for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+                const n1 = p1[i] || 0;
+                const n2 = p2[i] || 0;
+                if (n1 > n2) return 1;
+                if (n1 < n2) return -1;
+            }
+            return 0;
+        }
+
+        function ignoreUpdate() {
+            sessionStorage.setItem('update_ignored', 'true');
+            const modalEl = document.getElementById('versionUpdateModal');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            modal.hide();
+        }
+
         function showToast(message, type = 'info', duration = 3000) {
             const container = document.getElementById('toastContainer');
             

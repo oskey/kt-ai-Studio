@@ -164,14 +164,17 @@ KT-AI-Studio 目前已实现了一套完整的**漫剧与视频自动化生产�
 *   **智能合成 (Compositing)**: LLM 根据透视关系，自动规划多人站位（前景/中景/远景）与比例，将角色完美融入场景。
 
 ### 🎥 视频 (Video) 生成
-*   **图生视频 (Image-to-Video)**: 集成 **Wan2.1 (万象)** 等前沿模型，一键将静态场景转为动态视频。
+*   **图生视频 (Image-to-Video)**: 集成 **Wan2.2 (万象)** 等前沿模型，一键将静态场景转为动态视频。
 *   **对白驱动**: 若场景包含对白，LLM 会自动引导角色生成“说话/神态”动作（无字幕），提升生动感。
 *   **参数自适应**: 自动推算最佳 FPS 与时长，支持手动微调。
 
 ### 🔌 内置工作流
-*   `wf_base_character`: 角色立绘生成
+*   `wf_base_character`: Qwen Image 高质量图像生成
 *   `wf_8views`: 角色三视图/多视图生成
-*   `video_wan2_2_14B_i2v`: 高质量图生视频流
+*   `image_z_image_turbo`: Z-Image Turbo 极速图像生成
+*   `video_wan2_2_14B_i2v`: Wan2.2 高质量图生视频流
+*   `video_ltx2_i2v`: LTX2 图生视频流 (基础版)
+*   `video_ltx2_i2v(lora)`: LTX2 图生视频流 (含运镜LoRA)
 *   *(更多工作流持续更新中...)*
 
 ---
@@ -238,26 +241,43 @@ python -m app.main
 
 ## 📦 使用到的模型说明（非常重要）
 
-### 🟣 Qwen 系列模型
+### 🟣 Qwen 系列模型 (基础图像生成)
 
-```text
-qwen_image_edit_2509_fp8_e4m3fn.safetensors
-Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors
-Qwen-Edit-2509-Multiple-angles.safetensors
-qwen_2.5_vl_7b_fp8_scaled.safetensors
-qwen_image_vae.safetensors
-```
+| 路径 | 模型名称 | 说明 |
+| :--- | :--- | :--- |
+| `/models/unet/` | `qwen_image_2512_fp8_e4m3fn.safetensors` | Qwen Image 2.5 主模型 (FP8 量化) |
+| `/models/loras/` | `Qwen-Image-Lightning-4steps-V1.0.safetensors` | 4步极速采样 LoRA |
+| `/models/vae/` | `qwen_image_vae.safetensors` | Qwen 专用 VAE |
+| `/models/clip/` | `qwen_2.5_vl_7b_fp8_scaled.safetensors` | Qwen 2.5 VL 视觉语言模型 (CLIP) |
 
-### 🔵 Wan 2.2 系列模型
+### 🚀 Z-Image Turbo 系列模型 (极速图像生成)
 
-```text
-umt5_xxl_fp8_e4m3fn_scaled.safetensors
-wan_2.1_vae.safetensors
-wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors
-wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors
-wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors
-wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors
-```
+| 路径 | 模型名称 | 说明 |
+| :--- | :--- | :--- |
+| `/models/unet/` | `z_image_turbo_bf16.safetensors` | Z-Image Turbo 主模型 (BF16) |
+| `/models/clip/` | `qwen_3_4b.safetensors` | Z-Image 配套 CLIP (Qwen 3.4B) |
+| `/models/vae/` | `ae.safetensors` | 通用 VAE |
+
+### 🔵 Wan 2.2 系列模型 (视频生成)
+
+| 路径 | 模型名称 | 说明 |
+| :--- | :--- | :--- |
+| `/models/unet/` | `wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors` | Wan2.2 图生视频高噪模型 (14B FP8) |
+| `/models/unet/` | `wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors` | Wan2.2 图生视频低噪模型 (14B FP8) |
+| `/models/loras/` | `wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors` | Wan2.2 4步加速 LoRA (高噪) |
+| `/models/loras/` | `wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors` | Wan2.2 4步加速 LoRA (低噪) |
+| `/models/vae/` | `wan_2.1_vae.safetensors` | Wan 2.1/2.2 专用 VAE |
+| `/models/clip/` | `umt5_xxl_fp8_e4m3fn_scaled.safetensors` | UMT5 XXL 文本编码器 |
+
+### 🟢 LTX2 系列模型 (视频生成)
+
+| 路径 | 模型名称 | 说明 |
+| :--- | :--- | :--- |
+| `/models/checkpoints/` | `ltx-2-19b-dev-fp8.safetensors` | LTX Video 2.0 主模型 (19B FP8) |
+| `/models/loras/` | `ltx-2-19b-distilled-lora-384.safetensors` | LTX 蒸馏加速 LoRA |
+| `/models/loras/` | `ltx-2-19b-lora-camera-control-dolly-left.safetensors` | LTX 运镜控制 LoRA (Dolly Left) |
+| `/models/upscale_models/` | `ltx-2-spatial-upscaler-x2-1.0.safetensors` | LTX 空间放大模型 (x2) |
+| `/models/clip/` | `gemma_3_12B_it_fp4_mixed.safetensors` | Gemma 3 文本编码器 (用于 LTX) |
 
 ---
 
