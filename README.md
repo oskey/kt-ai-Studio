@@ -1,5 +1,7 @@
 # ✨ KT-AI-Studio
 
+新版本已经发布 https://github.com/oskey/Go-Ai-Studio
+
 <p align="center">
   <img src="docs/images/banner.png" alt="KT-AI-Studio Banner" width="100%" />
 </p>
